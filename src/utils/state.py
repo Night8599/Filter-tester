@@ -2,7 +2,7 @@ from data import Data
 
 import numpy as np
 class State:
-    def __init__(self, pos = Data(0,0), vel = Data(0,0), acc = Data(0,0)) -> None:
+    def __init__(self, pos:Data = Data(0,0), vel:Data = Data(0,0), acc:Data = Data(0,0)) -> None:
         self.pos = pos
         self.vel = vel
         self.acc = acc
