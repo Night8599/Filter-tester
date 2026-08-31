@@ -17,6 +17,11 @@ class KalmanFilter(Filter):
 
     def check_config(self, config):
         # Implement configuration validation logic specific to Kalman filter
+        if config is None:
+            raise ValueError("Configuration cannot be None.")
+        if not isinstance(config, dict):
+            raise TypeError("Configuration must be a dictionary.")
+        
         required_keys = ['initial_state_matrix', 'initial_covariance_matrix', 'process_noise_covariance']
         for key in required_keys:
             if key not in config:
