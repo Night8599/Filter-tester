@@ -2,10 +2,8 @@
 A base class for all filters.
 '''
 
-from data import FilterData
-
 class Filter:
-    def __init__(self, name=str, config=None):
+    def __init__(self, name=str, config=dict):
         self.name = name
         self.config = config
         self.state_estimate = None
