@@ -99,7 +99,12 @@ def plot_summary_table(
     Returns ``(fig, ax)``.
     """
     header, body = summary_table(result, list(labels) if labels else None, confidence)
-    fig, ax = plt.subplots(figsize=(min(1.0 + 1.35 * len(header), 20), 0.9 + 0.4 * (len(body) + 1)))
+    return draw_table(header, body, title)
+
+
+def draw_table(header: list[str], body: list[list[str]], title: str | None = None):
+    """Draw a metrics table; NEES / NIS verdict cells are colored. Returns ``(fig, ax)``."""
+    fig, ax = plt.subplots(figsize=(min(1.0 + 1.35 * len(header), 22), 0.9 + 0.4 * (len(body) + 1)))
     ax.axis("off")
     table = ax.table(cellText=body, colLabels=header, loc="center", cellLoc="center")
     table.auto_set_font_size(False)
@@ -109,13 +114,13 @@ def plot_summary_table(
     for (row, _), cell in table.get_celld().items():
         if row == 0:
             cell.set_text_props(weight="bold")
-    verdict_cols = [i for i, h in enumerate(header) if h.startswith(("NEES", "NIS"))]
+    verdict_cols = [i for i, h in enumerate(header) if h.startswith(("NEES", "NIS", "ANEES", "ANIS"))]
     for k, row in enumerate(body, start=1):  # color the consistency verdicts
         for col in verdict_cols:
             text = row[col]
-            if text.endswith(("optimistic", "pessimistic")):
+            if "optimistic" in text or "pessimistic" in text:
                 table[k, col].set_facecolor("#f8d7d3")
-            elif text.endswith("consistent"):
+            elif "consistent" in text:
                 table[k, col].set_facecolor("#d8eedb")
     if title:
         ax.set_title(title, weight="bold")

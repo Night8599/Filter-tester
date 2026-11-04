@@ -141,7 +141,11 @@ Implemented filters:
   - `result[name]` holds one `Trajectory` per filter, with arrays `t`, `mean`, `covariance`, `std`, `truth` (NaN rows where unknown, or `None`), `error`, the `innovations` used, and the `step_time` of each step.
   - `runner.run(rng, x0)` forwards `rng` and `x0` to simulated sources.
 - **Observers** (`runner.run(observers=[...])`) are called after every step with the step and all the estimates, e.g. by a live plot.
-- *Planned:* **`MonteCarlo`** repeats a simulated experiment with different random seeds.
+- **`MonteCarlo(source, {name: filter}, runs=N).run(...)`** *(implemented)* repeats a simulated experiment N times.
+  - Run `k` uses seed `k` (`first_seed=` shifts them for an independent experiment), so `Runner(...).run(rng=k)` reproduces any single run.
+  - It keeps, per filter: the NEES at every step `(N, K)`, the NIS at every innovation `(N, M)`, and each run's RMSE and mean step time.
+  - With `keep_runs=True` it also keeps every run's full `RunResult`.
+  - Observers are called after each run with the partial aggregate.
 
 ### 8. Metrics and plots (`metrics/`, `plotting/`) — implemented
 
@@ -157,7 +161,20 @@ The consistency checks compare a run's mean NEES / NIS with a chi-square interva
 - **optimistic**: the mean is above it, so the filter underestimates its error;
 - **pessimistic**: the mean is below it, so the filter overestimates its error.
 
-Samples within one run are correlated in time, so the interval uses an effective sample size estimated from the autocorrelation. Without this correction, a filter with the exact model was flagged in about 75% of runs on a fine truth grid. With it, about 5% are flagged, as expected at 95%. Monte Carlo runs will give a stricter test.
+Samples within one run are correlated in time, so the interval uses an effective sample size estimated from the autocorrelation. Without this correction, a filter with the exact model was flagged in about 75% of runs on a fine truth grid. With it, about 5% are flagged, as expected at 95%. A single run still detects a pessimistic filter by NEES only about half the time (NIS catches it), so use Monte Carlo for a strict test.
+
+**Monte Carlo metrics.** Runs are independent, so at every instant the NEES (NIS) averaged over the N runs is checked against the exact interval `chi2(N·n)/N`. A consistent filter stays inside it at about 95% of the instants. The table reports:
+- RMSE as mean ± std over runs;
+- ANEES / ANIS (the average over runs and time) with an interval and verdict;
+- the share of instants inside their bounds.
+
+In tests with 20-run experiments, the per-instant check gave 96% inside for a matched filter. Optimistic and pessimistic filters were flagged in 50/50 experiments, and the overall ANEES verdict wrongly flagged a matched filter in about 14% of experiments (nominal 5%). Functions: `mc_nees`, `mc_nis`, `mc_nees_consistency`, `mc_nis_consistency`, `mc_summary_table`, `format_mc_summary`.
+
+Monte Carlo plots:
+- `plot_mc_consistency(result)`: run-averaged NEES and NIS over time with their bounds, on a log scale;
+- `plot_rmse_boxplot(result)`: the per-run RMSE distribution of each filter, per state and total;
+- `plot_mc_summary_table(result)`;
+- `LiveMonteCarloPlot()`: an observer that shows the partial metrics as runs finish.
 
 `summary(result)` returns the metrics per filter, and `format_summary(result)` prints them as a table. Metrics that need the truth are left out when it is not available.
 
@@ -334,6 +351,26 @@ plot_summary_table(result, ["position", "velocity"])
 
 See `examples/compare_filters.py`: three Kalman filters (matched, optimistic and pessimistic measurement noise) on the same simulated data, shown live and then compared.
 
+### Monte Carlo (available now)
+
+```python
+from filter_tester.experiment import MonteCarlo
+from filter_tester.metrics import format_mc_summary
+from filter_tester.plotting import LiveMonteCarloPlot, plot_mc_consistency, plot_mc_summary_table, plot_rmse_boxplot
+
+mc = MonteCarlo(source, {"KF": kf}, runs=100)    # simulated source; run k uses seed k
+live = LiveMonteCarloPlot()                      # optional: partial metrics while running
+result = mc.run(observers=[live])                # keep_runs=True keeps every run
+live.finish()
+
+print(format_mc_summary(result, ["position", "velocity"]))
+plot_mc_consistency(result)                      # NEES / NIS over time with chi-square bounds
+plot_rmse_boxplot(result, ["position", "velocity"])
+plot_mc_summary_table(result, ["position", "velocity"])
+```
+
+See `examples/monte_carlo.py` (matched, optimistic and pessimistic filters over 100 runs).
+
 ### Plotting systems (available now)
 
 Both functions draw one subplot per state component against time:
@@ -432,7 +469,7 @@ The framework is built module by module, starting with the data generators.
 - [x] Plots of true systems (states vs. time, static and live)
 - [x] `Estimate`, filter base classes (`Filter`, `BayesFilter`), linear Kalman filter
 - [x] Runner with observers, metrics (RMSE, NEES, NIS, step time) with consistency verdicts, filter plots (estimates, errors, table, live)
-- [ ] Monte Carlo
+- [x] Monte Carlo (seeds 0..N-1, per-instant chi-square bounds, ANEES/ANIS, RMSE boxplots, live partial metrics)
 - [ ] Nonlinear filters (EKF, UKF, particle filter)
 - [ ] Configuration files
 
