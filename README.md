@@ -2,7 +2,7 @@
 
 A framework for testing and comparing **stochastic filters** (Kalman filters, particle filters, or any algorithm that turns noisy inputs into a state estimate) against **different kinds of systems**, using either simulated data or real data loaded from files.
 
-> **Status: under redesign.** The project is being rewritten from scratch. This README describes the target architecture. The code currently in `src/` is the legacy prototype and does not follow it yet. Items marked *(to be decided)* are open design decisions.
+> **Status: under redesign.** The project is being rewritten from scratch. This README describes the target architecture. The code currently in `src/` is the legacy prototype and does not follow it yet.
 
 ---
 
@@ -63,7 +63,7 @@ These turn the true state into measurements: `z = h(x, t) + v`, each with its ow
 These produce the sequence of `Step`s that the filters consume.
 
 - **`SimulatedSource(system, sensors, time_grid)`** runs a true system and its sensors.
-- **`FileSource(path, column_mapping)`** reads recorded data. *(Supported file formats and expected columns: to be decided.)*
+- **`FileSource(path, column_mapping)`** reads recorded data from **CSV** files. A time column is required, measurement columns are mapped to sensors, and ground-truth columns are optional.
 
 ### 5. Filter models (`models/`)
 
@@ -74,7 +74,7 @@ These are what a filter believes about the world. They are independent from the 
 
 Each filter uses only what it needs. For example, a linear KF needs matrices, an EKF needs Jacobians (or numerical differentiation), and a particle filter needs to sample the noise.
 
-**Filter state vs. true state.** The filter's state may differ from the true state (different dimension or different variables, e.g. a 6-state system estimated by a 4-state filter). Metrics compare them through a mapping between the two spaces *(how this mapping is defined: to be decided)*.
+**Filter state vs. true state.** The filter estimates the same state as the true system (same dimension and variables), so estimates and ground truth are compared directly.
 
 **Control inputs.** A filter may receive either the true control input or a noisy version of it; this is configured per experiment.
 
@@ -115,7 +115,17 @@ Two kinds of plotting are planned:
 
 ### 9. Configuration (`config/`)
 
-The Python API is the foundation. On top of it there is a name-based registry (e.g. `@register("kalman")`) and a configuration-file loader that builds the same objects. *(File format, e.g. YAML: to be decided.)*
+The Python API is the foundation. On top of it there is a name-based registry (e.g. `@register("kalman")`) and a **YAML** configuration loader that builds the same objects.
+
+---
+
+## Requirements
+
+- Python ≥ 3.10
+- numpy, scipy, matplotlib, pyyaml
+- pytest (for tests)
+
+Plots, both real-time and report figures, use matplotlib.
 
 ---
 
@@ -206,13 +216,9 @@ results = Runner(source, {"KF": kf}).run()
 
 ---
 
-## Open design decisions
+## Roadmap
 
-- How the filter state is mapped to the true state for metrics, when they differ.
-- Supported real-data file formats and expected columns.
-- Dependencies and minimum Python version.
-- Configuration file format (e.g. YAML).
-- Scope of the first implemented version.
+The framework is built module by module, starting with the data generators (true systems).
 
 ---
 
