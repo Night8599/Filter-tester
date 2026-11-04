@@ -7,7 +7,7 @@ The same simulated experiment is repeated N times (run k uses seed k):
 - "pessimistic": it believes the GPS is 10x noisier than it is.
 
 The partial metrics are shown live as runs finish, then the final figures and
-table. Requires `pip install -e .` first.
+table. Requires `pip install -e ".[plot]"` first.
 
     python examples/monte_carlo.py              # 100 runs, live
     python examples/monte_carlo.py --runs 300

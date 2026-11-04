@@ -2,7 +2,7 @@
 
 Install the package once first (from the repository root):
 
-    pip install -e .
+    pip install -e ".[plot]"
 
 Then run:
 

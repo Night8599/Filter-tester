@@ -3,7 +3,7 @@
 Two sensors (GPS for position every 0.5 s, speedometer for velocity every
 0.2 s) plus the truth (every 0.05 s). The filter predicts on the truth-only
 steps too, so its estimate has the truth's resolution. Requires
-`pip install -e .` first.
+`pip install -e ".[plot]"` first.
 
     python examples/kalman_filter.py
 """

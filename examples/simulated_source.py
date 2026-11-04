@@ -1,7 +1,7 @@
 """A constant-velocity system observed by two sensors at different rates.
 
 The truth is simulated on a fine grid (high resolution), and the sensors add
-steps at their own measurement times. Requires `pip install -e .` first.
+steps at their own measurement times. Requires `pip install -e ".[plot]"` first.
 
     python examples/simulated_source.py
 """

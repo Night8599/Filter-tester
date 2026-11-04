@@ -1,4 +1,16 @@
-"""Plotting utilities (matplotlib)."""
+"""Plotting utilities (matplotlib).
+
+matplotlib is an optional dependency: install it with ``pip install "filter-tester[plot]"``
+(or ``pip install matplotlib``).
+"""
+
+try:
+    import matplotlib  # noqa: F401
+except ImportError as err:  # pragma: no cover - depends on the environment
+    raise ImportError(
+        "filter_tester.plotting needs matplotlib: pip install matplotlib "
+        '(or install the package with the "plot" extra)'
+    ) from err
 
 from .filters import LiveFilterPlot, plot_errors, plot_estimates, plot_summary_table
 from .montecarlo import (

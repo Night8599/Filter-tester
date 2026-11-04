@@ -5,7 +5,7 @@
 - "pessimistic": it believes the GPS is 10x noisier than it is (R too large).
 
 The run is shown live, then the static figures and the metrics table.
-Requires `pip install -e .` first.
+Requires `pip install -e ".[plot]"` first.
 
     python examples/compare_filters.py             # live, as fast as possible
     python examples/compare_filters.py --speed 2   # live, twice real time
