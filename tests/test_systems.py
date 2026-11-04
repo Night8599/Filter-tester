@@ -185,3 +185,23 @@ def test_simulate_validates_times():
         simulate(make_random_walk(), [])
     with pytest.raises(ValueError):
         simulate(make_random_walk(), [0.0, 2.0, 1.0])
+
+
+# ------------------------------------------------------------ initial state
+def test_initial_state_can_be_chosen_per_run():
+    system = make_random_walk()
+    system.noise_enabled = False
+    assert np.array_equal(simulate(system, [0.0, 1.0], x0=[5.0])[:, 0], [5.0, 5.0])
+    # Without x0 the system's own initial state is used again.
+    assert simulate(system, [0.0, 1.0])[0, 0] == 0.0
+
+
+def test_initial_state_override_can_be_random():
+    system = make_random_walk()
+    x0s = [system.reset(rng=s, x0=GaussianNoise([[4.0]]))[0] for s in range(3000)]
+    assert abs(np.var(x0s) - 4.0) < 0.3
+
+
+def test_analytic_system_rejects_initial_state():
+    with pytest.raises(TypeError):
+        AnalyticSystem(lambda t, w: [t]).reset(x0=[1.0])

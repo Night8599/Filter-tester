@@ -58,6 +58,7 @@ def plot_system(
     live: bool = False,
     refresh_interval: float = 1 / 30,
     speed: float | None = None,
+    x0=None,
     **line_kwargs,
 ):
     """Simulate ``system`` over ``times`` and plot its states.
@@ -71,6 +72,8 @@ def plot_system(
     ``None`` runs as fast as possible, ``1.0`` in real time (1 s simulated
     takes 1 s), ``2.0`` twice as fast, ``0.5`` at half speed.
 
+    ``x0`` overrides the system's initial state for this run.
+
     Returns ``(fig, axes, states)``.
     """
     times = np.asarray(times, dtype=float).reshape(-1)
@@ -79,7 +82,7 @@ def plot_system(
     if speed is not None and not live:
         raise ValueError("speed only applies when live=True")
     if not live:
-        states = simulate(system, times, rng)
+        states = simulate(system, times, rng, x0=x0)
         fig, axes = plot_states(times, states, labels, title, **line_kwargs)
         return fig, axes, states
 
@@ -94,7 +97,7 @@ def plot_system(
             )
         plot.update(t, x)
 
-    states = simulate(system, times, rng, on_step=on_step)
+    states = simulate(system, times, rng, on_step=on_step, x0=x0)
     plot.finish()
     return plot.fig, plot.axes, states
 
