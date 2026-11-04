@@ -204,6 +204,8 @@ Plots, both real-time and report figures, use matplotlib.
 
 ```
 src/filter_tester/
+  scenarios.py   # ready-made systems + filter models for the web interface
+  web_api.py     # JSON API used by the web interface
   core/          # Step, Estimate, Trajectory
   systems/       # true systems (analytic, discrete, continuous)
   sensors/       # measurement generation
@@ -216,10 +218,46 @@ src/filter_tester/
   config/        # registry and config-file loader
   cli.py
 examples/        # example scripts and configuration files
+web/             # web interface: page, canvas charts, build script, dev server
 tests/
 ```
 
 ---
+
+## Web interface
+
+**Try it in the browser:** https://night8599.github.io/Filter-tester/ — nothing to install. The page runs this Python package in the browser with [Pyodide](https://pyodide.org). The first visit downloads the Python runtime, numpy and scipy, which takes a few seconds.
+
+- **Setup**:
+  - pick a system and set its true constants and sensors;
+  - add any number of filters and change each filter's constants (process model, noise, initial estimate) with sliders or by typing values. New filters start matched to the true system, and *Match truth* resets them.
+- **Simulation**:
+  - **single run**: truth, measurements and each filter's estimate with ±3σ, live, optionally paced in real time;
+  - **Monte Carlo**: NEES and NIS averaged over the runs, with their chi-square bounds, updating as runs finish.
+- **Metrics**:
+  - RMSE, NEES, NIS and time per step for every filter, with consistency verdicts;
+  - in a single run, each filter's current mean and variance next to the truth, plus the variance over time;
+  - in Monte Carlo, the mean and variance of the per-run RMSE and its boxplots.
+
+Systems available in the interface (`filter_tester.scenarios`):
+
+| Scenario | True system | Linear Kalman filter |
+|---|---|---|
+| Constant velocity | random acceleration, GPS (+ optional speedometer) | exact model |
+| Ornstein–Uhlenbeck | `dx = −θx dt + σ dW` | exact discretization |
+| Mass–spring–damper | damped oscillator with random force | exact discretization |
+| Pendulum (nonlinear) | `θ̈ = −(g/L) sin θ − cθ̇ + σw` | small-angle model `sin θ ≈ θ`, which degrades at large angles |
+
+**Run it locally** without Pyodide:
+
+```bash
+pip install -e .
+python web/dev_server.py        # open http://localhost:8000/?backend=server
+```
+
+**Publishing.** `.github/workflows/pages.yml` runs the tests, builds the site with `python web/build.py` (the page files plus `filter_tester.zip`, the package that the page loads) and deploys it to GitHub Pages on every push to `main`. To enable it once, go to *Settings → Pages* and set *Source* to *GitHub Actions*.
+
+**Tests.** `tests/test_web_ui.py` drives the real page in headless Chrome against the dev server, so no Pyodide is needed. It is skipped unless Playwright and Chrome/Chromium are installed (`pip install -e ".[ui-test]"`).
 
 ## Installation
 
@@ -470,7 +508,8 @@ The framework is built module by module, starting with the data generators.
 - [x] `Estimate`, filter base classes (`Filter`, `BayesFilter`), linear Kalman filter
 - [x] Runner with observers, metrics (RMSE, NEES, NIS, step time) with consistency verdicts, filter plots (estimates, errors, table, live)
 - [x] Monte Carlo (seeds 0..N-1, per-instant chi-square bounds, ANEES/ANIS, RMSE boxplots, live partial metrics)
-- [ ] Nonlinear filters (EKF, UKF, particle filter)
+- [x] Web interface (GitHub Pages, Pyodide): scenarios, adjustable filters, live single-run and Monte Carlo metrics
+- [ ] Nonlinear filters (EKF, UKF, particle filter), Lorenz system in the interface
 - [ ] Configuration files
 
 ---

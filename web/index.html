@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Filter Tester</title>
+  <meta name="description" content="Compare stochastic filters on different systems, interactively, in the browser.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6fdf'/%3E%3Cpath d='M4 22 C10 8 16 26 28 10' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Filter Tester</h1>
+      <span class="tagline">Compare filters on different systems</span>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="setup" aria-selected="true">Setup</button>
+      <button role="tab" data-tab="simulation" aria-selected="false">Simulation</button>
+      <button role="tab" data-tab="metrics" aria-selected="false">Metrics</button>
+    </nav>
+    <div class="status" id="status" aria-live="polite">Loading…</div>
+    <button id="stop-top" type="button" class="small" hidden>Stop</button>
+  </header>
+
+  <main>
+    <!-- ============================== SETUP ============================== -->
+    <section id="tab-setup" class="tab-panel" role="tabpanel">
+      <div class="setup-grid">
+        <div class="column">
+          <div class="card">
+            <h2>System</h2>
+            <label class="field">
+              <span>Scenario</span>
+              <select id="scenario"></select>
+            </label>
+            <p class="description" id="scenario-description"></p>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <h2>True system &amp; sensors</h2>
+              <button class="link" id="reset-system" type="button">Reset</button>
+            </div>
+            <p class="hint">What really happens. Filters never see these values.</p>
+            <div id="system-params"></div>
+          </div>
+        </div>
+
+        <div class="column">
+          <div class="card">
+            <div class="card-head">
+              <h2>Filters</h2>
+              <div class="add-filter">
+                <select id="filter-type" aria-label="Filter type"></select>
+                <button id="add-filter" type="button" class="primary small">+ Add filter</button>
+              </div>
+            </div>
+            <p class="hint">What each filter believes. New filters start with a model that matches the true system;
+              change the constants to see their effect.</p>
+            <div id="filters"></div>
+          </div>
+        </div>
+
+        <div class="column">
+          <div class="card run-card">
+            <h2>Run</h2>
+            <fieldset class="mode">
+              <legend>Mode</legend>
+              <label><input type="radio" name="mode" value="single" checked> Single run</label>
+              <label><input type="radio" name="mode" value="montecarlo"> Monte Carlo</label>
+            </fieldset>
+            <label class="field">
+              <span id="seed-label">Seed</span>
+              <input type="number" id="seed" value="0" min="0" step="1">
+            </label>
+            <label class="field mc-only">
+              <span>Number of runs</span>
+              <input type="number" id="runs" value="100" min="1" max="10000" step="1">
+            </label>
+            <label class="field single-only">
+              <span>Speed</span>
+              <select id="speed">
+                <option value="0">As fast as possible</option>
+                <option value="0.5">0.5× real time</option>
+                <option value="1">1× real time</option>
+                <option value="2">2× real time</option>
+                <option value="5" selected>5× real time</option>
+                <option value="20">20× real time</option>
+              </select>
+            </label>
+            <div class="buttons">
+              <button id="start" type="button" class="primary" disabled>Start</button>
+              <button id="stop" type="button" disabled>Stop</button>
+            </div>
+            <p class="error" id="error" role="alert"></p>
+            <details class="help">
+              <summary>What do the metrics mean?</summary>
+              <dl>
+                <dt>RMSE</dt><dd>Average distance between estimate and truth. Lower is better.</dd>
+                <dt>NEES</dt><dd>Is the filter's covariance honest about its real error? Ideal ≈ number of states.
+                  Above the interval: <b>optimistic</b> (overconfident). Below: <b>pessimistic</b>.</dd>
+                <dt>NIS</dt><dd>Same idea using the innovations (measurement − prediction); needs no truth.
+                  Ideal ≈ measurement size.</dd>
+                <dt>Time/step</dt><dd>Computation time per step (in the browser).</dd>
+              </dl>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ SIMULATION ============================ -->
+    <section id="tab-simulation" class="tab-panel" role="tabpanel" hidden>
+      <div class="progress"><div class="bar" id="progress-bar"></div><span id="progress-text">Not started</span></div>
+      <div id="sim-empty" class="empty">Choose a system and filters in <b>Setup</b>, then press <b>Start</b>.</div>
+      <div id="sim-single" class="charts" hidden></div>
+      <div id="sim-mc" class="charts" hidden>
+        <div class="chart-card"><canvas id="chart-nees"></canvas></div>
+        <div class="chart-card"><canvas id="chart-nis"></canvas></div>
+      </div>
+    </section>
+
+    <!-- ============================== METRICS ============================== -->
+    <section id="tab-metrics" class="tab-panel" role="tabpanel" hidden>
+      <div id="metrics-empty" class="empty">Metrics appear here while a simulation runs.</div>
+      <div id="metrics-content" hidden>
+        <div class="card">
+          <h2 id="metrics-title">Metrics</h2>
+          <div class="table-wrap"><table id="metrics-table"></table></div>
+          <p class="hint" id="metrics-hint"></p>
+        </div>
+        <div class="card">
+          <h2 id="meanvar-title">Mean and variance</h2>
+          <p class="hint" id="meanvar-hint"></p>
+          <div class="table-wrap"><table id="meanvar-table"></table></div>
+        </div>
+        <div class="charts" id="metrics-charts"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <a href="https://github.com/Night8599/Filter-tester">Filter Tester on GitHub</a>
+    · <span id="backend-info"></span>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
