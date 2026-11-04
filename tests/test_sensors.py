@@ -8,18 +8,18 @@ from filter_tester.systems import AnalyticSystem, DiscreteSystem, SDESystem, sim
 
 # ------------------------------------------------------------- measurement times
 def test_period_grid_is_absolute_and_inclusive():
-    sensor = Sensor(lambda x, v, t: x, period=0.5)
+    sensor = Sensor("s", lambda x, v, t: x, period=0.5)
     assert np.allclose(sensor.measurement_times(0.0, 2.0), [0.0, 0.5, 1.0, 1.5, 2.0])
     assert np.allclose(sensor.measurement_times(0.2, 1.2), [0.5, 1.0])
 
 
 def test_period_with_offset():
-    sensor = Sensor(lambda x, v, t: x, period=1.0, offset=0.25)
+    sensor = Sensor("s", lambda x, v, t: x, period=1.0, offset=0.25)
     assert np.allclose(sensor.measurement_times(0.0, 3.0), [0.25, 1.25, 2.25])
 
 
 def test_period_grid_does_not_drift_on_long_runs():
-    sensor = Sensor(lambda x, v, t: x, period=0.1)
+    sensor = Sensor("s", lambda x, v, t: x, period=0.1)
     times = sensor.measurement_times(0.0, 1000.0)
     assert times.size == 10001
     assert times[-1] == pytest.approx(1000.0, abs=1e-9)
@@ -28,7 +28,7 @@ def test_period_grid_does_not_drift_on_long_runs():
 
 
 def test_explicit_times_are_filtered_to_window():
-    sensor = Sensor(lambda x, v, t: x, times=[0.1, 0.7, 2.0, 5.0])
+    sensor = Sensor("s", lambda x, v, t: x, times=[0.1, 0.7, 2.0, 5.0])
     assert np.allclose(sensor.measurement_times(0.5, 2.0), [0.7, 2.0])
     assert sensor.measurement_times(3.0, 4.0).size == 0
 
@@ -45,17 +45,17 @@ def test_explicit_times_are_filtered_to_window():
 )
 def test_invalid_timing_is_rejected(kwargs):
     with pytest.raises(ValueError):
-        Sensor(lambda x, v, t: x, **kwargs)
+        Sensor("s", lambda x, v, t: x, **kwargs)
 
 
 # ----------------------------------------------------------------- measurements
 def test_measure_deterministic():
-    sensor = Sensor(lambda x, v, t: [x[0] + t], period=1.0)
+    sensor = Sensor("s", lambda x, v, t: [x[0] + t], period=1.0)
     assert np.allclose(sensor.measure([2.0, 5.0], 3.0), [5.0])
 
 
 def test_measure_additive_noise_statistics():
-    sensor = Sensor(lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=1.0)
+    sensor = Sensor("s", lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=1.0)
     rng = np.random.default_rng(0)
     z = np.array([sensor.measure([1.0, 0.0], 0.0, rng)[0] for _ in range(20000)])
     assert abs(z.mean() - 1.0) < 0.01
@@ -65,6 +65,7 @@ def test_measure_additive_noise_statistics():
 def test_measure_non_additive_noise():
     # Range measurement with multiplicative noise.
     sensor = Sensor(
+        "s",
         lambda x, v, t: [np.linalg.norm(x) * (1 + v[0])], noise=GaussianNoise([[0.01]]), period=1.0
     )
     z = sensor.measure([3.0, 4.0], 0.0, np.random.default_rng(1))
@@ -72,7 +73,7 @@ def test_measure_non_additive_noise():
 
 
 def test_measure_requires_rng_only_when_noise_is_drawn():
-    noisy = Sensor(lambda x, v, t: x + v, noise=GaussianNoise([[1.0]]), period=1.0)
+    noisy = Sensor("s", lambda x, v, t: x + v, noise=GaussianNoise([[1.0]]), period=1.0)
     with pytest.raises(ValueError):
         noisy.measure([0.0], 0.0)
     noisy.noise_enabled = False
@@ -80,7 +81,7 @@ def test_measure_requires_rng_only_when_noise_is_drawn():
 
 
 def test_measurement_names_checked():
-    sensor = Sensor(lambda x, v, t: x, period=1.0, measurement_names=["a", "b"])
+    sensor = Sensor("s", lambda x, v, t: x, period=1.0, measurement_names=["a", "b"])
     with pytest.raises(ValueError):
         sensor.measure([1.0], 0.0)
 
@@ -88,6 +89,7 @@ def test_measurement_names_checked():
 # --------------------------------------------------------------- noise switch
 def test_disabled_sensor_noise_gives_nominal_measurement():
     sensor = Sensor(
+        "s",
         lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=1.0, noise_enabled=False
     )
     assert np.allclose(sensor.measure([1.0, 0.0], 0.0, np.random.default_rng(0)), [1.0])
@@ -134,3 +136,9 @@ def test_noise_term_zero_shape_from_callable_does_not_touch_run_rng():
     state_before = rng.bit_generator.state
     assert np.array_equal(term.draw(rng, enabled=False), np.zeros(3))
     assert rng.bit_generator.state == state_before
+
+
+@pytest.mark.parametrize("name", [None, "", "   ", 3])
+def test_name_is_required(name):
+    with pytest.raises(ValueError):
+        Sensor(name, lambda x, v, t: x, period=1.0)

@@ -19,7 +19,7 @@ def make_cv(**kwargs):
 
 
 def position_sensor(name="gps", period=0.5, **kwargs):
-    return Sensor(lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=period, name=name, **kwargs)
+    return Sensor(name, lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=period, **kwargs)
 
 
 def test_truth_grid_and_sensor_times_are_merged():
@@ -41,7 +41,7 @@ def test_sensor_times_off_the_grid_add_steps():
 
 def test_simultaneous_measurements_share_one_step():
     gps = position_sensor("gps", period=0.5)
-    speed = Sensor(lambda x, v, t: x[1:], period=0.25, name="speedometer")
+    speed = Sensor("speedometer", lambda x, v, t: x[1:], period=0.25)
     steps = SimulatedSource(make_cv(), [gps, speed], [0.0, 1.0]).run(rng=0)
     by_time = {s.t: set(s.measurements) for s in steps}
     assert by_time[0.5] == {"gps", "speedometer"}
@@ -50,7 +50,7 @@ def test_simultaneous_measurements_share_one_step():
 
 
 def test_measurements_come_from_the_true_state():
-    exact = Sensor(lambda x, v, t: x.copy(), period=0.1, name="exact")
+    exact = Sensor("exact", lambda x, v, t: x.copy(), period=0.1)
     steps = SimulatedSource(make_cv(), [exact], np.linspace(0, 1, 11)).run(rng=3)
     for s in steps:
         assert np.array_equal(s.measurements["exact"], s.truth)
@@ -99,7 +99,7 @@ def test_steps_are_lazy():
 
 def test_analytic_system_works_as_source():
     wave = AnalyticSystem(lambda t, w: [np.sin(t)])
-    steps = SimulatedSource(wave, [Sensor(lambda x, v, t: x, period=1.0)], np.linspace(0, 3, 31)).run()
+    steps = SimulatedSource(wave, [Sensor("s", lambda x, v, t: x, period=1.0)], np.linspace(0, 3, 31)).run()
     assert np.allclose(truth_series(steps)[1][:, 0], np.sin(np.linspace(0, 3, 31)))
 
 
