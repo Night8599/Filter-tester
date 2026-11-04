@@ -36,7 +36,7 @@ The key rule: **a filter never knows where its data comes from.** At each step i
 
 | Type | Contents |
 |---|---|
-| `Step` | `t`, `measurement` (may be `None`), `control` (optional), `truth` (optional, since real data may not have it) |
+| `Step` *(implemented)* | `t`, `measurements` (dict keyed by sensor name; empty when no sensor measured, and several sensors measuring at the same instant share one step), `truth` (optional, since real data may not have it) |
 | `Estimate` | `t`, `mean` and `covariance` (mandatory: the covariance is the filter's measure of uncertainty), plus optional `particles` / `weights`, `extras` |
 | `Trajectory` | The full history of steps and estimates of one run, stored as arrays |
 
@@ -61,6 +61,8 @@ Noise is **general, not only additive**: `w` is passed to the model function, wh
 
 Noise is **optional and easy to switch off**: set `system.noise_enabled = False` (or pass `noise_enabled=False`). The model then receives a zero noise vector (in `SDESystem`, the diffusion term is skipped), giving the nominal, noiseless trajectory. A random initial state is still sampled.
 
+The **initial state** is easy to choose per run: `system.reset(x0=...)`, `simulate(..., x0=...)`, `plot_system(..., x0=...)` and `SimulatedSource.run(x0=...)` all accept a fixed vector or a noise / callable for a random one, overriding the system's own `x0` for that run only. (`AnalyticSystem` doesn't accept it, since its state at `t0` is given by `g`.)
+
 `simulate(system, times, rng)` runs a system over a time grid and returns an array of shape `(len(times), n)`.
 
 Every system accepts an optional `state_names` list (e.g. `["position", "velocity"]`), used as axis labels in plots. `simulate` also accepts an `on_step(t, x)` callback, called after every time point.
@@ -82,7 +84,7 @@ When a sensor measures is defined in one of two ways:
 
 These produce the sequence of `Step`s that the filters consume.
 
-- **`SimulatedSource(system, sensors, time_grid)`** runs a true system and its sensors.
+- **`SimulatedSource(system, sensors, times)`** *(implemented)* runs a true system and its sensors. The system is evaluated on the `times` grid, which also sets the start and end of the run and can be finer than the sensors to show the truth in high resolution, plus at every sensor measurement time. Instants that coincide become **one step** holding all the measurements taken then. Randomness is split into independent streams for the system and for each sensor, so turning one sensor's noise off leaves the truth unchanged for the same seed. `source.run(rng, x0)` returns all steps, and `source.steps(rng, x0)` yields them lazily. `truth_series(steps)` and `measurement_series(steps, sensor_name)` from `filter_tester.core` turn steps into arrays.
 - **`FileSource(path, column_mapping)`** reads recorded data from **CSV** files. A time column is required, measurement columns are mapped to sensors, and ground-truth columns are optional.
 
 ### 5. Filter models (`models/`)
@@ -187,11 +189,10 @@ from filter_tester.systems import AnalyticSystem, DiscreteSystem, SDESystem, Gau
 
 dt = 0.1
 times = np.arange(0.0, 10.0, dt)
-A = np.array([[1, dt], [0, 1]])
 
 # Constant-velocity model with additive Gaussian process noise
 cv = DiscreteSystem(
-    f=lambda x, w, t, dt: A @ x + w,
+    f=lambda x, w, t, dt: np.array([[1.0, dt], [0.0, 1.0]]) @ x + w,  # uses the step's dt
     x0=[0.0, 1.0],
     noise=GaussianNoise(np.diag([1e-4, 1e-3])),
 )
@@ -223,6 +224,22 @@ gps.noise_enabled = False                           # noiseless measurements
 ```
 
 Connecting systems and sensors automatically over a run is the job of the upcoming simulated data source.
+
+### Simulated data source (available now)
+
+```python
+from filter_tester.core import measurement_series, truth_series
+from filter_tester.sources import SimulatedSource
+
+gps.name = "gps"
+source = SimulatedSource(cv, [gps], times=np.linspace(0.0, 10.0, 1001))  # fine truth grid
+steps = source.run(rng=0, x0=[0.0, 2.0])     # x0 is optional
+
+t, x = truth_series(steps)                   # truth in high resolution
+tz, z = measurement_series(steps, "gps")     # measurements every 0.5 s
+```
+
+See `examples/simulated_source.py` for two sensors at different rates plotted over the truth.
 
 ### Plotting systems (available now)
 
@@ -266,8 +283,8 @@ H = np.array([[1, 0]])
 
 # True system that generates the data
 system = DiscreteSystem(f=lambda x, w, t, dt: A @ x + w, x0=[0.0, 1.0], noise=GaussianNoise(np.diag([1e-4, 1e-3])))
-sensor = Sensor(h=lambda x, t: H @ x, R=np.array([[0.25]]))
-source = SimulatedSource(system, [sensor], time_grid=np.arange(0, 10, dt))
+sensor = Sensor(h=lambda x, v, t: H @ x + v, noise=GaussianNoise([[0.25]]), period=dt, name="gps")
+source = SimulatedSource(system, [sensor], times=np.arange(0, 10, dt))
 
 # The filter's own (possibly mismatched) model
 kf = KalmanFilter(
@@ -317,7 +334,7 @@ The framework is built module by module, starting with the data generators.
 - [x] True systems: analytic, discrete-time, SDE (Euler–Maruyama), general noise
 - [x] Optional, switchable noise in systems and sensors
 - [x] Sensors (period or explicit times, general noise)
-- [ ] Simulated data source
+- [x] Simulated data source (truth grid + sensor times, one step per instant), per-run initial state
 - [ ] CSV data source
 - [x] Plots of true systems (states vs. time, static and live)
 - [ ] Core types, filters, runner, metrics, filter plots, configuration
