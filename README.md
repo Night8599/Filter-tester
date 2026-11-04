@@ -85,7 +85,10 @@ When a sensor measures is defined in one of two ways:
 These produce the sequence of `Step`s that the filters consume.
 
 - **`SimulatedSource(system, sensors, times)`** *(implemented)* runs a true system and its sensors. The system is evaluated on the `times` grid, which also sets the start and end of the run and can be finer than the sensors to show the truth in high resolution, plus at every sensor measurement time. Instants that coincide become **one step** holding all the measurements taken then. Randomness is split into independent streams for the system and for each sensor, so turning one sensor's noise off leaves the truth unchanged for the same seed. `source.run(rng, x0)` returns all steps, and `source.steps(rng, x0)` yields them lazily. `truth_series(steps)` and `measurement_series(steps, sensor_name)` from `filter_tester.core` turn steps into arrays.
-- **`FileSource(path, column_mapping)`** reads recorded data from **CSV** files. A time column is required, measurement columns are mapped to sensors, and ground-truth columns are optional.
+- **`CSVSource(files | mapping, time_column, time_unit)`** *(implemented)* reads recorded data from **CSV** files (header row, `,` separator), typically **one file per sensor**, plus optional ground truth. Times are converted to seconds from `time_unit` (`s`, `ms`, `us`, `ns`, `min`, `h`). The time column is detected automatically (`t`, `time` or `timestamp`, case-insensitive) unless `time_column` is given.
+  - *Automatic mode* (`CSVSource(files)`): a column `prefix.col` belongs to group `prefix`, and a column without prefix belongs to the group named after its file (`gps.csv` → sensor `gps`). The group `truth` is the ground truth, so it can come from its own `truth.csv` or from `truth.*` columns inside another file.
+  - *Explicit mode* (`CSVSource(mapping={"gps": {"file": ..., "columns": [...]}, "truth": {...}})`): only the listed columns are read. Each entry may set its own `time_column`.
+  - A row whose group columns are all empty (or `NaN`) means that group has no sample at that time, so several sensors with different rates can share a file. Samples at the same instant across files form one step, and steps carry the truth only where it was recorded.
 
 ### 5. Filter models (`models/`)
 
@@ -241,6 +244,25 @@ tz, z = measurement_series(steps, "gps")     # measurements every 0.5 s
 
 See `examples/simulated_source.py` for two sensors at different rates plotted over the truth.
 
+### Recorded data from CSV (available now)
+
+```python
+from filter_tester.sources import CSVSource
+
+# One file per sensor; truth.csv (optional) holds the ground truth
+source = CSVSource(["examples/data/gps.csv", "examples/data/speedometer.csv", "examples/data/truth.csv"])
+steps = source.run()                         # same Step objects as SimulatedSource
+source.sensor_names                          # ['gps', 'speedometer']
+
+# Explicit columns, other names and units
+source = CSVSource(mapping={
+    "gps":   {"file": "examples/data/gps.csv", "columns": ["position"]},
+    "truth": {"file": "examples/data/truth.csv", "columns": ["position", "velocity"]},
+}, time_unit="s")
+```
+
+See `examples/csv_source.py` for reading and plotting the sample files in `examples/data/`.
+
 ### Plotting systems (available now)
 
 Both functions draw one subplot per state component against time:
@@ -312,8 +334,8 @@ metrics: [rmse, nees]
 ### Real data
 
 ```python
-source = FileSource("data/run01.csv", column_mapping={...})
-results = Runner(source, {"KF": kf}).run()
+source = CSVSource(["gps.csv", "speedometer.csv", "truth.csv"])   # available now
+results = Runner(source, {"KF": kf}).run()                         # planned
 # Truth-based metrics are only computed if the file contains ground truth.
 ```
 
@@ -335,7 +357,7 @@ The framework is built module by module, starting with the data generators.
 - [x] Optional, switchable noise in systems and sensors
 - [x] Sensors (period or explicit times, general noise)
 - [x] Simulated data source (truth grid + sensor times, one step per instant), per-run initial state
-- [ ] CSV data source
+- [x] CSV data source (one file per sensor, automatic or explicit columns, optional truth)
 - [x] Plots of true systems (states vs. time, static and live)
 - [ ] Core types, filters, runner, metrics, filter plots, configuration
 
