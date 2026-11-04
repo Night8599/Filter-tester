@@ -11,7 +11,6 @@ Axis labels come from ``labels`` if given, otherwise from the system's
 
 from __future__ import annotations
 
-import time
 from typing import Sequence
 
 import matplotlib.pyplot as plt
@@ -20,6 +19,7 @@ from numpy.typing import ArrayLike
 
 from ..systems.base import RngLike, System
 from ..systems.simulate import simulate
+from ._live import LiveFigure
 
 
 def plot_states(
@@ -102,7 +102,7 @@ def plot_system(
     return plot.fig, plot.axes, states
 
 
-class LiveStatePlot:
+class LiveStatePlot(LiveFigure):
     """A figure that updates as states arrive, one ``(t, x)`` at a time.
 
     ::
@@ -112,14 +112,10 @@ class LiveStatePlot:
             plot.update(t, system.advance(t))
         plot.finish()
 
-    After each redraw, the next one waits at least ``refresh_interval``
-    seconds, so plotting does not dominate the simulation time. ``t_range`` fixes the
-    time axis in advance; without it the axis grows with the data.
-
-    ``speed`` paces :meth:`update` against the wall clock: ``None`` does not
-    wait, ``1.0`` makes simulated time pass in real time, ``2.0`` twice as
-    fast. If the simulation is slower than the requested speed, it simply
-    runs as fast as it can.
+    ``t_range`` fixes the time axis in advance; without it the axis grows
+    with the data. ``refresh_interval`` and ``speed`` (wall-clock pacing:
+    ``None`` = no waiting, ``1.0`` = real time) are described in
+    :class:`~filter_tester.plotting._live.LiveFigure`.
     """
 
     def __init__(
@@ -132,62 +128,26 @@ class LiveStatePlot:
         speed: float | None = None,
         **line_kwargs,
     ):
-        if speed is not None and not speed > 0:
-            raise ValueError("speed must be positive or None")
-        self._was_interactive = plt.isinteractive()
-        plt.ion()
+        super().__init__(refresh_interval, speed)
         self.fig, self.axes = _get_axes(n_states, resolve_labels(n_states, labels), title, None)
         self.lines = [ax.plot([], [], **line_kwargs)[0] for ax in self.axes]
-        if t_range is not None and t_range[1] > t_range[0]:
+        self._fixed_t = t_range is not None and t_range[1] > t_range[0]
+        if self._fixed_t:
             for ax in self.axes:
                 ax.set_xlim(*t_range)
-        self._fixed_t = t_range is not None and t_range[1] > t_range[0]
-        self.refresh_interval = float(refresh_interval)
         self._t: list[float] = []
         self._x: list[np.ndarray] = []
-        self._last_draw = -np.inf
-        self.speed = None if speed is None else float(speed)
-        self._clock_start: tuple[float, float] | None = None  # (t, wall time) of the first update
-        self._finished = False
 
     def update(self, t: float, x: ArrayLike) -> None:
         """Add the state ``x`` at time ``t`` and redraw if enough time passed."""
-        if self._finished:
-            raise RuntimeError("the plot is already finished")
+        self._check_open()
         x = np.asarray(x, dtype=float).reshape(-1)
         if x.size != len(self.lines):
             raise ValueError(f"expected {len(self.lines)} state components, got {x.size}")
         t = float(t)
         self._t.append(t)
         self._x.append(x)
-        if time.perf_counter() - self._last_draw >= self.refresh_interval:
-            self._redraw()
-            # Measured after drawing, so slow redraws cannot take all the time.
-            self._last_draw = time.perf_counter()
-        self._wait_for(t)
-
-    def _wait_for(self, t: float) -> None:
-        """Sleep until the wall clock catches up with simulated time ``t``."""
-        if self.speed is None:
-            return
-        now = time.perf_counter()
-        if self._clock_start is None:
-            self._clock_start = (t, now)
-            return
-        t0, wall0 = self._clock_start
-        remaining = wall0 + (t - t0) / self.speed - now
-        if remaining > 0:
-            # Waits while letting the GUI process events, so the window stays responsive.
-            self.fig.canvas.start_event_loop(remaining)
-
-    def finish(self) -> None:
-        """Draw all received data and leave the figure as a static plot."""
-        if self._finished:
-            return
-        self._redraw()
-        self._finished = True
-        if not self._was_interactive:
-            plt.ioff()
+        self._tick(t)
 
     def _redraw(self) -> None:
         if not self._t:
@@ -197,8 +157,7 @@ class LiveStatePlot:
             line.set_data(self._t, data[:, i])
             ax.relim()
             ax.autoscale_view(scalex=not self._fixed_t)
-        self.fig.canvas.draw_idle()
-        plt.pause(1e-3)  # let the GUI process events and show the update
+        self._show()
 
 
 def resolve_labels(n: int, labels: Sequence[str] | None) -> list[str]:
