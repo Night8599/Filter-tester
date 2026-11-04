@@ -1,6 +1,10 @@
 """Simulate and plot the three kinds of true systems.
 
-Run from the repository root:
+Install the package once first (from the repository root):
+
+    pip install -e .
+
+Then run:
 
     python examples/plot_systems.py          # live plots
     python examples/plot_systems.py --static # static plots only
