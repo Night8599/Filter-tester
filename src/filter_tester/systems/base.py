@@ -31,8 +31,15 @@ class System(ABC):
     (or ``noise_enabled=False`` in the constructor). The model then runs with
     zero noise, which gives its nominal, noiseless trajectory.
 
+    The initial state can be chosen per run with ``reset(x0=...)``; it then
+    replaces the system's own ``x0`` for that run only.
+
     Subclasses implement :meth:`_initial_state` and :meth:`_advance`.
     """
+
+    #: Whether the initial state can be chosen freely (False when it is
+    #: determined by the model itself, as in an analytic system).
+    accepts_initial_state = True
 
     def __init__(
         self,
@@ -48,15 +55,26 @@ class System(ABC):
         self._rng: np.random.Generator | None = None
 
     # ------------------------------------------------------------------ API
-    def reset(self, t0: float = 0.0, rng: RngLike = None) -> np.ndarray:
+    def reset(
+        self, t0: float = 0.0, rng: RngLike = None, x0: InitialState | None = None
+    ) -> np.ndarray:
         """Start a new run at time ``t0`` and return the initial state.
 
         ``rng`` may be a ``numpy.random.Generator``, an integer seed, or
         ``None`` (fresh, non-reproducible randomness).
+
+        ``x0`` overrides the initial state for this run: a fixed vector, or a
+        noise / callable ``rng -> x0`` to sample a random one. ``None`` uses
+        the system's own initial state.
         """
+        if x0 is not None and not self.accepts_initial_state:
+            raise TypeError(f"{type(self).__name__} does not accept an initial state")
         self._rng = np.random.default_rng(rng)
         self._t = float(t0)
-        self._x = _as_state(self._initial_state(self._t, self._rng))
+        if x0 is None:
+            self._x = _as_state(self._initial_state(self._t, self._rng))
+        else:
+            self._x = sample_initial_state(x0, self._rng)
         if self.state_names is not None and len(self.state_names) != self._x.size:
             raise ValueError(
                 f"{len(self.state_names)} state_names given for a state of dimension {self._x.size}"
