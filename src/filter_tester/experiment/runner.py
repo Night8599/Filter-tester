@@ -104,30 +104,62 @@ class Runner:
         ``rng`` and ``x0`` are forwarded to the source's ``steps()`` when
         given (simulated sources accept them; recorded data does not).
         """
-        kwargs = {k: v for k, v in (("rng", rng), ("x0", x0)) if v is not None}
         observers = list(observers)
-        for f in self.filters.values():
-            f.reset()
-
-        steps: list[Step] = []
-        records: dict[str, list] = {name: [] for name in self.filters}
-        for step in self.source.steps(**kwargs):
-            steps.append(step)
-            estimates = {}
-            for name, f in self.filters.items():
-                start = time.perf_counter()
-                estimate = f.step(step.t, step.measurements)
-                records[name].append((estimate, time.perf_counter() - start))
-                estimates[name] = estimate
+        recorder = self.start(rng, x0)
+        for step, estimates in recorder:
             for observer in observers:
                 observer(step, estimates)
-        if not steps:
-            raise ValueError("the source produced no steps")
+        return recorder.result()
 
-        truth = _truth_array(steps)
+    def start(self, rng=None, x0=None) -> "RunRecorder":
+        """Start a run that is advanced step by step (e.g. by an interactive UI).
+
+        Iterating the returned :class:`RunRecorder` processes one step at a
+        time; :meth:`RunRecorder.result` gives the result of the steps so far.
+        """
+        kwargs = {k: v for k, v in (("rng", rng), ("x0", x0)) if v is not None}
+        for f in self.filters.values():
+            f.reset()
+        return RunRecorder(self.source.steps(**kwargs), self.filters)
+
+
+class RunRecorder:
+    """A run in progress: feeds steps to the filters and records the estimates."""
+
+    def __init__(self, steps: Iterable[Step], filters: Mapping[str, Filter]):
+        self._steps = iter(steps)
+        self.filters = filters
+        self.steps: list[Step] = []
+        self._records: dict[str, list] = {name: [] for name in filters}
+        self.done = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> tuple[Step, dict[str, Estimate]]:
+        """Process the next step; returns ``(step, {filter name: estimate})``."""
+        try:
+            step = next(self._steps)
+        except StopIteration:
+            self.done = True
+            raise
+        self.steps.append(step)
+        estimates = {}
+        for name, f in self.filters.items():
+            start = time.perf_counter()
+            estimate = f.step(step.t, step.measurements)
+            self._records[name].append((estimate, time.perf_counter() - start))
+            estimates[name] = estimate
+        return step, estimates
+
+    def result(self) -> RunResult:
+        """The :class:`RunResult` of the steps processed so far."""
+        if not self.steps:
+            raise ValueError("the source produced no steps")
+        truth = _truth_array(self.steps)
         return RunResult(
-            steps=steps,
-            trajectories={name: _trajectory(name, recs, truth) for name, recs in records.items()},
+            steps=list(self.steps),
+            trajectories={name: _trajectory(name, recs, truth) for name, recs in self._records.items()},
         )
 
 

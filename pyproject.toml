@@ -13,6 +13,8 @@ dependencies = ["numpy", "scipy", "matplotlib", "pyyaml"]
 
 [project.optional-dependencies]
 test = ["pytest"]
+# End-to-end test of the web interface (also needs a Chrome/Chromium browser)
+ui-test = ["pytest", "playwright"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

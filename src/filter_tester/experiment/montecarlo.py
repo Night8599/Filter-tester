@@ -105,19 +105,32 @@ class MonteCarlo:
         first_seed: int = 0,
     ) -> MonteCarloResult:
         observers = list(observers)
+        # The partial aggregate is only built when someone looks at it.
+        for k, run, partial in self.iter_runs(x0, keep_runs, first_seed, build_partial=bool(observers)):
+            for observer in observers:
+                observer(k, run, partial)
+        return self.last_result()
+
+    def iter_runs(self, x0=None, keep_runs: bool = False, first_seed: int = 0, build_partial: bool = True):
+        """Yield ``(k, run, partial aggregate)`` after each run, e.g. for an interactive UI.
+
+        With ``build_partial=False`` the partial aggregate is ``None`` (cheaper);
+        the final aggregate is then available as ``self.last_result()``.
+        """
         acc = _Accumulator()
         kept: list[RunResult] | None = [] if keep_runs else None
+        self._acc, self._kept = acc, kept
         for k in range(self.runs):
             seed = int(first_seed) + k
             run = self.runner.run(rng=seed, x0=x0)
             acc.add(seed, run)
             if kept is not None:
                 kept.append(run)
-            if observers:  # the partial aggregate is only built when someone looks at it
-                partial = acc.result(kept)
-                for observer in observers:
-                    observer(k, run, partial)
-        return acc.result(kept)
+            yield k, run, (acc.result(kept) if build_partial else None)
+
+    def last_result(self) -> MonteCarloResult:
+        """Aggregate of the runs done by the latest :meth:`run` / :meth:`iter_runs`."""
+        return self._acc.result(self._kept)
 
 
 @dataclass

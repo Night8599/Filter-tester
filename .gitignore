@@ -401,3 +401,6 @@ FodyWeavers.xsd
 # Python packaging / testing
 *.egg-info/
 .pytest_cache/
+
+# Web interface build output
+web/dist/
