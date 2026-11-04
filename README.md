@@ -71,7 +71,7 @@ Control inputs are not supported yet.
 
 ### 3. Sensors (`sensors/`) — implemented
 
-These turn the true state into measurements: `Sensor(h, noise, period | times)` computes `z = h(x, v, t)`. As with systems, the noise `v` is general (passed to `h`), optional, and can be switched off with `sensor.noise_enabled = False`.
+These turn the true state into measurements: `Sensor(name, h, noise, period | times)` computes `z = h(x, v, t)`. The `name` is required and must be unique within a data source, since it identifies the sensor's measurements in each step. As with systems, the noise `v` is general (passed to `h`), optional, and can be switched off with `sensor.noise_enabled = False`.
 
 When a sensor measures is defined in one of two ways:
 
@@ -118,7 +118,7 @@ class BayesFilter(Filter):
     # step() calls predict(), then update() only if a measurement is present
 ```
 
-Because `predict` and `update` are separate, the framework naturally handles steps without measurements and irregularly sampled data.
+Filters receive **every** step, including those without measurements (for example the points of a fine truth grid). On those steps a Bayesian filter only predicts, which also yields estimates at the full resolution of the truth. Because `predict` and `update` are separate, irregularly sampled data and multiple sensors are handled the same way.
 
 ### 7. Experiments (`experiment/`)
 
@@ -213,7 +213,7 @@ from filter_tester.noise import GaussianNoise
 from filter_tester.sensors import Sensor
 
 # Noisy position measurement every 0.5 s
-gps = Sensor(h=lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=0.5,
+gps = Sensor("gps", h=lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=0.5,
              measurement_names=["position"])
 
 rng = np.random.default_rng(0)
@@ -231,7 +231,6 @@ Connecting systems and sensors automatically over a run is the job of the upcomi
 from filter_tester.core import measurement_series, truth_series
 from filter_tester.sources import SimulatedSource
 
-gps.name = "gps"
 source = SimulatedSource(cv, [gps], times=np.linspace(0.0, 10.0, 1001))  # fine truth grid
 steps = source.run(rng=0, x0=[0.0, 2.0])     # x0 is optional
 
@@ -283,7 +282,7 @@ H = np.array([[1, 0]])
 
 # True system that generates the data
 system = DiscreteSystem(f=lambda x, w, t, dt: A @ x + w, x0=[0.0, 1.0], noise=GaussianNoise(np.diag([1e-4, 1e-3])))
-sensor = Sensor(h=lambda x, v, t: H @ x + v, noise=GaussianNoise([[0.25]]), period=dt, name="gps")
+sensor = Sensor("gps", h=lambda x, v, t: H @ x + v, noise=GaussianNoise([[0.25]]), period=dt)
 source = SimulatedSource(system, [sensor], times=np.arange(0, 10, dt))
 
 # The filter's own (possibly mismatched) model
