@@ -134,20 +134,38 @@ Implemented filters:
 
 - **`KalmanFilter(process, measurements, x0, P0)`**: linear Kalman filter. `measurements` maps sensor names to `LinearMeasurementModel`s. The covariance update uses the Joseph form for numerical robustness.
 
-### 7. Experiments (`experiment/`)
+### 7. Experiments (`experiment/`) — Runner implemented
 
-- **`Runner`** runs one data source against N filters and returns one `Trajectory` per filter.
-- **`MonteCarlo`** repeats a simulated experiment with different random seeds.
-- The `Runner` notifies **observers** after every step, so results can be consumed while the experiment is running (e.g. by a live plot) and not only at the end.
+- **`Runner(source, {name: filter})`** resets the filters, feeds every step of the source to every filter, and returns a `RunResult`:
+  - `result.steps` holds the steps of the run;
+  - `result[name]` holds one `Trajectory` per filter, with arrays `t`, `mean`, `covariance`, `std`, `truth` (NaN rows where unknown, or `None`), `error`, the `innovations` used, and the `step_time` of each step.
+  - `runner.run(rng, x0)` forwards `rng` and `x0` to simulated sources.
+- **Observers** (`runner.run(observers=[...])`) are called after every step with the step and all the estimates, e.g. by a live plot.
+- *Planned:* **`MonteCarlo`** repeats a simulated experiment with different random seeds.
 
-### 8. Metrics and plots (`metrics/`, `plotting/`)
+### 8. Metrics and plots (`metrics/`, `plotting/`) — implemented
 
-These are pure functions over `Trajectory` objects, for example RMSE, NEES, NIS and execution time. Metrics that need the ground truth are skipped automatically when it is not available, as with real data.
+| Metric | Measures | Needs truth | Ideal |
+|---|---|---|---|
+| `rmse`, `rmse_total` | accuracy, per state component and for the whole error vector | yes | lower is better |
+| `nees`, `nees_consistency` | whether the covariance matches the actual error | yes | mean ≈ state dimension `n` |
+| `nis`, `nis_consistency` | whether the innovation covariance matches the innovations | no, so it also works on real data | mean ≈ measurement dimension |
+| `mean_step_time` | computational cost | no | lower is better |
 
-Two kinds of plotting are planned:
+The consistency checks compare a run's mean NEES / NIS with a chi-square interval (95% by default) and give a verdict:
+- **consistent**: the mean is inside the interval;
+- **optimistic**: the mean is above it, so the filter underestimates its error;
+- **pessimistic**: the mean is below it, so the filter overestimates its error.
 
-- **Real-time plots** that update while the experiment runs (as a `Runner` observer).
-- **Report figures** generated afterwards that illustrate the strong and weak points of each filter, e.g. estimate vs. truth, error with ±3σ bounds from the covariance, and consistency (NEES/NIS).
+Samples within one run are correlated in time, so the interval uses an effective sample size estimated from the autocorrelation. Without this correction, a filter with the exact model was flagged in about 75% of runs on a fine truth grid. With it, about 5% are flagged, as expected at 95%. Monte Carlo runs will give a stricter test.
+
+`summary(result)` returns the metrics per filter, and `format_summary(result)` prints them as a table. Metrics that need the truth are left out when it is not available.
+
+Plots (each filter keeps the same color in every figure):
+- **`plot_estimates(result)`**: the truth and each filter's estimate with a ±3σ band.
+- **`plot_errors(result)`**: each filter's error with its own ±3σ band. A consistent filter keeps its error inside the band.
+- **`plot_summary_table(result)`**: the metrics table as a figure, with consistency verdicts in green or red.
+- **`LiveFilterPlot(labels, speed=...)`**: estimates vs. truth while the `Runner` runs, passed as an observer, with the same `speed` pacing as the live system plot.
 
 ### 9. Configuration (`config/`)
 
@@ -296,6 +314,26 @@ estimates[-1].mean, estimates[-1].covariance, estimates[-1].std
 
 See `examples/kalman_filter.py` for the filter on the sample CSV data, plotted with ±3σ bounds against the truth.
 
+### Comparing filters (available now)
+
+```python
+from filter_tester.experiment import Runner
+from filter_tester.metrics import format_summary
+from filter_tester.plotting import LiveFilterPlot, plot_errors, plot_estimates, plot_summary_table
+
+runner = Runner(source, {"KF": kf})                        # any number of filters
+live = LiveFilterPlot(labels=["position", "velocity"])     # optional, speed=1.0 for real time
+result = runner.run(observers=[live])                      # rng=..., x0=... for simulated sources
+live.finish()
+
+print(format_summary(result, ["position", "velocity"]))    # RMSE, NEES, NIS, time per step
+plot_estimates(result, ["position", "velocity"])
+plot_errors(result, ["position", "velocity"])
+plot_summary_table(result, ["position", "velocity"])
+```
+
+See `examples/compare_filters.py`: three Kalman filters (matched, optimistic and pessimistic measurement noise) on the same simulated data, shown live and then compared.
+
 ### Plotting systems (available now)
 
 Both functions draw one subplot per state component against time:
@@ -316,9 +354,9 @@ plt.show()
 
 Axis labels come from the `labels` argument if given, otherwise from the system's `state_names`, otherwise `x[0]`, `x[1]`, …. For custom live views, `LiveStatePlot(n_states, labels).update(t, x)` can be fed one state at a time. See `examples/plot_systems.py` for a complete script (`--static` disables live plotting, `--speed 1` paces it in real time).
 
-### Full pipeline (planned API)
+### Full pipeline
 
-> Systems, sensors, sources and the Kalman filter below are implemented; `Runner` and the metrics are not yet. Names may change during implementation.
+> Everything below except the configuration files is implemented; see the sections above for the current API.
 
 
 
@@ -330,7 +368,7 @@ from filter_tester.sources import SimulatedSource
 from filter_tester.models import LinearProcessModel, LinearMeasurementModel
 from filter_tester.filters import KalmanFilter
 from filter_tester.experiment import Runner
-from filter_tester.metrics import rmse, nees
+from filter_tester.metrics import rmse, nees_consistency
 
 dt = 0.1
 A = np.array([[1, dt], [0, 1]])
@@ -348,8 +386,8 @@ kf = KalmanFilter(
     x0=np.zeros(2), P0=np.eye(2),
 )
 
-results = Runner(source, {"KF": kf}).run(seed=42)
-print(rmse(results["KF"]), nees(results["KF"]))
+results = Runner(source, {"KF": kf}).run(rng=42)
+print(rmse(results["KF"]), nees_consistency(results["KF"]).verdict)
 ```
 
 ### Configuration file
@@ -368,7 +406,7 @@ metrics: [rmse, nees]
 
 ```python
 source = CSVSource(["gps.csv", "speedometer.csv", "truth.csv"])   # available now
-results = Runner(source, {"KF": kf}).run()                         # planned
+results = Runner(source, {"KF": kf}).run()
 # Truth-based metrics are only computed if the file contains ground truth.
 ```
 
@@ -393,7 +431,8 @@ The framework is built module by module, starting with the data generators.
 - [x] CSV data source (one file per sensor, automatic or explicit columns, optional truth)
 - [x] Plots of true systems (states vs. time, static and live)
 - [x] `Estimate`, filter base classes (`Filter`, `BayesFilter`), linear Kalman filter
-- [ ] Runner, metrics, filter plots
+- [x] Runner with observers, metrics (RMSE, NEES, NIS, step time) with consistency verdicts, filter plots (estimates, errors, table, live)
+- [ ] Monte Carlo
 - [ ] Nonlinear filters (EKF, UKF, particle filter)
 - [ ] Configuration files
 
