@@ -61,6 +61,8 @@ Noise is **general, not only additive**: `w` is passed to the model function, wh
 
 `simulate(system, times, rng)` runs a system over a time grid and returns an array of shape `(len(times), n)`.
 
+Every system accepts an optional `state_names` list (e.g. `["position", "velocity"]`), used as axis labels in plots. `simulate` also accepts an `on_step(t, x)` callback, called after every time point.
+
 Control inputs are not supported yet.
 
 ### 3. Sensors (`sensors/`)
@@ -194,6 +196,25 @@ ou = SDESystem(f=lambda x, t: -1.5 * x, G=lambda x, t: [0.8], x0=[2.0], max_step
 states = simulate(cv, times, rng=42)   # shape (len(times), 2)
 ```
 
+### Plotting systems (available now)
+
+Both functions draw one subplot per state component against time:
+
+```python
+import matplotlib.pyplot as plt
+from filter_tester.plotting import plot_states, plot_system
+
+# Simulate and plot in one call; live=True updates the figure while simulating
+fig, axes, states = plot_system(cv, times, rng=42, live=True)
+
+# Plot states you already have, e.g. overlaying another run on the same axes
+plot_states(times, simulate(cv, times, rng=7), axes=axes, label="seed 7")
+
+plt.show()
+```
+
+Axis labels come from the `labels` argument if given, otherwise from the system's `state_names`, otherwise `x[0]`, `x[1]`, …. For custom live views, `LiveStatePlot(n_states, labels).update(t, x)` can be fed one state at a time. See `examples/plot_systems.py` for a complete script (`--static` disables live plotting).
+
 ### Full pipeline (planned API)
 
 > The examples below illustrate the intended design for the modules that are not implemented yet. Names may change during implementation.
@@ -267,7 +288,8 @@ The framework is built module by module, starting with the data generators.
 - [x] True systems: analytic, discrete-time, SDE (Euler–Maruyama), general noise
 - [ ] Sensors and simulated data source
 - [ ] CSV data source
-- [ ] Core types, filters, runner, metrics, plotting, configuration
+- [x] Plots of true systems (states vs. time, static and live)
+- [ ] Core types, filters, runner, metrics, filter plots, configuration
 
 ---
 

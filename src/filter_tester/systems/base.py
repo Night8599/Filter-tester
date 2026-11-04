@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, Union
+from typing import Callable, Sequence, Union
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -24,11 +24,15 @@ class System(ABC):
         x = system.advance(0.1)       # true state at t = 0.1
         x = system.advance(0.25)      # times must not decrease
 
+    ``state_names`` optionally names each state component (e.g.
+    ``["position", "velocity"]``); plots use them as axis labels.
+
     Subclasses implement :meth:`_initial_state` and :meth:`_advance`.
     """
 
-    def __init__(self, name: str | None = None):
+    def __init__(self, name: str | None = None, state_names: Sequence[str] | None = None):
         self.name = name or type(self).__name__
+        self.state_names = None if state_names is None else [str(n) for n in state_names]
         self._t: float | None = None
         self._x: np.ndarray | None = None
         self._rng: np.random.Generator | None = None
@@ -43,6 +47,10 @@ class System(ABC):
         self._rng = np.random.default_rng(rng)
         self._t = float(t0)
         self._x = _as_state(self._initial_state(self._t, self._rng))
+        if self.state_names is not None and len(self.state_names) != self._x.size:
+            raise ValueError(
+                f"{len(self.state_names)} state_names given for a state of dimension {self._x.size}"
+            )
         return self._x.copy()
 
     def advance(self, t: float) -> np.ndarray:
