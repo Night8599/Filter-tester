@@ -24,8 +24,8 @@ system = DiscreteSystem(
     noise=GaussianNoise(np.diag([1e-3, 1e-2])),
     state_names=["position", "velocity"],
 )
-gps = Sensor(lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.04]]), period=0.5, name="gps")
-speedometer = Sensor(lambda x, v, t: x[1:] + v, noise=GaussianNoise([[0.01]]), period=0.2, name="speedometer")
+gps = Sensor("gps", lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.04]]), period=0.5)
+speedometer = Sensor("speedometer", lambda x, v, t: x[1:] + v, noise=GaussianNoise([[0.01]]), period=0.2)
 
 source = SimulatedSource(system, [gps, speedometer], times=np.linspace(0.0, 10.0, 1001))
 steps = source.run(rng=0)
