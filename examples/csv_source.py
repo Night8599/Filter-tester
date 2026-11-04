@@ -6,7 +6,7 @@ The files in examples/data/ were produced by a simulation:
     speedometer.csv  t, velocity   (every 0.2 s)
     truth.csv        t, position, velocity (every 0.05 s, optional)
 
-Requires `pip install -e .` first.
+Requires `pip install -e ".[plot]"` first.
 
     python examples/csv_source.py
 """
