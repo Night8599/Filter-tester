@@ -8,7 +8,7 @@ from typing import Callable, Sequence, Union
 import numpy as np
 from numpy.typing import ArrayLike
 
-from .noise import Noise
+from ..noise import Noise
 
 # An initial state is either a fixed vector or something that samples one.
 InitialState = Union[ArrayLike, Noise, Callable[[np.random.Generator], np.ndarray]]
@@ -27,11 +27,21 @@ class System(ABC):
     ``state_names`` optionally names each state component (e.g.
     ``["position", "velocity"]``); plots use them as axis labels.
 
+    Noise can be switched off at any time with ``system.noise_enabled = False``
+    (or ``noise_enabled=False`` in the constructor). The model then runs with
+    zero noise, which gives its nominal, noiseless trajectory.
+
     Subclasses implement :meth:`_initial_state` and :meth:`_advance`.
     """
 
-    def __init__(self, name: str | None = None, state_names: Sequence[str] | None = None):
+    def __init__(
+        self,
+        name: str | None = None,
+        state_names: Sequence[str] | None = None,
+        noise_enabled: bool = True,
+    ):
         self.name = name or type(self).__name__
+        self.noise_enabled = bool(noise_enabled)
         self.state_names = None if state_names is None else [str(n) for n in state_names]
         self._t: float | None = None
         self._x: np.ndarray | None = None
