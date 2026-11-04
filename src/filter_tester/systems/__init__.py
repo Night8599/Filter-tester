@@ -4,7 +4,7 @@ from .analytic import AnalyticSystem
 from .base import System
 from .continuous import SDESystem
 from .discrete import DiscreteSystem
-from .noise import GaussianNoise, Noise, UniformNoise
+from ..noise import GaussianNoise, Noise, UniformNoise
 from .simulate import simulate
 
 __all__ = [
