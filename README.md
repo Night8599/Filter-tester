@@ -2,7 +2,7 @@
 
 A framework for testing and comparing **stochastic filters** (Kalman filters, particle filters, or any algorithm that turns noisy inputs into a state estimate) against **different kinds of systems**, using either simulated data or real data loaded from files.
 
-> **Status: under redesign.** The project is being rewritten from scratch. This README describes the target architecture. The code currently in `src/` is the legacy prototype and does not follow it yet.
+> **Status: under construction.** The project is being rewritten from scratch, module by module. This README describes the target architecture; see the [Roadmap](#roadmap) for what is already implemented.
 
 ---
 
@@ -40,19 +40,28 @@ The key rule: **a filter never knows where its data comes from.** At each step i
 | `Estimate` | `t`, `mean` and `covariance` (mandatory: the covariance is the filter's measure of uncertainty), plus optional `particles` / `weights`, `extras` |
 | `Trajectory` | The full history of steps and estimates of one run, stored as arrays |
 
-### 2. True systems (`systems/`)
+### 2. True systems (`systems/`) — implemented
 
-These generate the true state. They share a single contract:
+These generate the true state. All of them share one interface:
 
 ```python
-advance(t, control, rng) -> x
+x0 = system.reset(t0=0.0, rng=42)   # start a run; rng: Generator, int seed or None
+x  = system.advance(t)              # true state at time t (times must not decrease)
 ```
 
-Planned implementations:
+Implementations:
 
-- **`AnalyticSystem`**: `x = g(t) + noise`.
-- **`DiscreteSystem`**: `x[k+1] = f(x[k], u[k], dt) + w`.
-- **`ContinuousSystem`**: `dx/dt = f(x, u)`, integrated numerically (e.g. Euler, RK4, SDE solvers).
+| Class | Model | Noise |
+|---|---|---|
+| `AnalyticSystem(g, noise)` | `x = g(t, w)` | `w` drawn independently at each evaluated time |
+| `DiscreteSystem(f, x0, noise)` | `x_next = f(x, w, t, dt)` | one `w` per step; `dt` is the time since the previous call, so fixed and variable steps both work |
+| `SDESystem(f, x0, G, max_step)` | `dx = f(x, t) dt + G(x, t) dW` (Itô) | Wiener process, integrated with Euler–Maruyama in sub-steps of at most `max_step` |
+
+Noise is **general, not only additive**: `w` is passed to the model function, which decides how it enters the dynamics. A noise source is a `Noise` object (`GaussianNoise(cov, mean)`, `UniformNoise(low, high)`) or any callable `rng -> np.ndarray`. In `SDESystem`, `G` may depend on the state (multiplicative noise) and may be an `(n, m)` matrix or an `(n,)` diagonal. The initial state `x0` is either a fixed vector or a noise / callable that samples a random one at each `reset`.
+
+`simulate(system, times, rng)` runs a system over a time grid and returns an array of shape `(len(times), n)`.
+
+Control inputs are not supported yet.
 
 ### 3. Sensors (`sensors/`)
 
@@ -132,7 +141,7 @@ Plots, both real-time and report figures, use matplotlib.
 ## Planned project layout
 
 ```
-filter_tester/
+src/filter_tester/
   core/          # Step, Estimate, Trajectory
   systems/       # true systems (analytic, discrete, continuous)
   sensors/       # measurement generation
@@ -150,15 +159,50 @@ tests/
 
 ---
 
-## Usage (planned API)
+## Installation
 
-> The examples below illustrate the intended design. They are not runnable yet, and names may change during implementation.
+```bash
+pip install -e ".[test]"
+pytest
+```
 
-### Python API
+## Usage
+
+### True systems (available now)
 
 ```python
 import numpy as np
-from filter_tester.systems import DiscreteSystem
+from filter_tester.systems import AnalyticSystem, DiscreteSystem, SDESystem, GaussianNoise, simulate
+
+dt = 0.1
+times = np.arange(0.0, 10.0, dt)
+A = np.array([[1, dt], [0, 1]])
+
+# Constant-velocity model with additive Gaussian process noise
+cv = DiscreteSystem(
+    f=lambda x, w, t, dt: A @ x + w,
+    x0=[0.0, 1.0],
+    noise=GaussianNoise(np.diag([1e-4, 1e-3])),
+)
+
+# Non-additive noise: a sine wave with a random phase perturbation
+wave = AnalyticSystem(lambda t, w: [np.sin(t + w[0])], noise=GaussianNoise([[0.01]]))
+
+# Ornstein–Uhlenbeck process: dx = -theta x dt + sigma dW
+ou = SDESystem(f=lambda x, t: -1.5 * x, G=lambda x, t: [0.8], x0=[2.0], max_step=1e-3)
+
+states = simulate(cv, times, rng=42)   # shape (len(times), 2)
+```
+
+### Full pipeline (planned API)
+
+> The examples below illustrate the intended design for the modules that are not implemented yet. Names may change during implementation.
+
+
+
+```python
+import numpy as np
+from filter_tester.systems import DiscreteSystem, GaussianNoise
 from filter_tester.sensors import Sensor
 from filter_tester.sources import SimulatedSource
 from filter_tester.models import LinearProcessModel, LinearMeasurementModel
@@ -171,7 +215,7 @@ A = np.array([[1, dt], [0, 1]])
 H = np.array([[1, 0]])
 
 # True system that generates the data
-system = DiscreteSystem(f=lambda x, u, dt: A @ x, Q=np.diag([1e-4, 1e-3]), x0=np.array([0.0, 1.0]))
+system = DiscreteSystem(f=lambda x, w, t, dt: A @ x + w, x0=[0.0, 1.0], noise=GaussianNoise(np.diag([1e-4, 1e-3])))
 sensor = Sensor(h=lambda x, t: H @ x, R=np.array([[0.25]]))
 source = SimulatedSource(system, [sensor], time_grid=np.arange(0, 10, dt))
 
@@ -211,14 +255,19 @@ results = Runner(source, {"KF": kf}).run()
 ## Extending the framework
 
 - **New filter:** subclass `Filter` (or `BayesFilter` if it has a predict/update cycle) and register it by name.
-- **New system:** implement `advance(t, control, rng)` and register it.
+- **New system:** subclass `System` and implement `_initial_state(t0, rng)` and `_advance(x, t, t_next, rng)`. Often you don't need a subclass: pass your own functions to `AnalyticSystem`, `DiscreteSystem` or `SDESystem`.
 - **New metric:** write a function that takes a `Trajectory` and returns a value.
 
 ---
 
 ## Roadmap
 
-The framework is built module by module, starting with the data generators (true systems).
+The framework is built module by module, starting with the data generators.
+
+- [x] True systems: analytic, discrete-time, SDE (Euler–Maruyama), general noise
+- [ ] Sensors and simulated data source
+- [ ] CSV data source
+- [ ] Core types, filters, runner, metrics, plotting, configuration
 
 ---
 
