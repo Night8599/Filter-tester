@@ -14,6 +14,15 @@ from .metrics import (
     summary,
     summary_table,
 )
+from .montecarlo import (
+    MonteCarloConsistency,
+    format_mc_summary,
+    mc_nees,
+    mc_nees_consistency,
+    mc_nis,
+    mc_nis_consistency,
+    mc_summary_table,
+)
 
 __all__ = [
     "rmse",
@@ -28,4 +37,11 @@ __all__ = [
     "summary",
     "summary_table",
     "format_summary",
+    "mc_nees",
+    "mc_nis",
+    "MonteCarloConsistency",
+    "mc_nees_consistency",
+    "mc_nis_consistency",
+    "mc_summary_table",
+    "format_mc_summary",
 ]
