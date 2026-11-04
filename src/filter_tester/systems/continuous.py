@@ -15,7 +15,7 @@ DiffusionFn = Callable[[np.ndarray, float], ArrayLike]
 
 
 class SDESystem(System):
-    """Itô SDE ``dx = f(x, t) dt + G(x, t) dW``, integrated with Euler–Maruyama.
+    """Itô SDE ``dx = f(x, t) dt + G(x, t) dW``.
 
     - ``f(x, t)`` (drift) returns a vector of shape ``(n,)``.
     - ``G(x, t)`` (diffusion) returns either an ``(n, m)`` matrix, driven by an
@@ -25,7 +25,13 @@ class SDESystem(System):
 
     Between two calls to :meth:`advance`, the interval is split into equal
     sub-steps no longer than ``max_step``. Smaller values are more accurate
-    and slower. Euler–Maruyama has strong order 0.5 (weak order 1).
+    and slower. ``method`` chooses the integrator:
+
+    - ``"euler"`` (Euler–Maruyama): strong order 0.5, weak order 1.
+    - ``"heun"``: the drift uses Heun's predictor-corrector (second order, much
+      more accurate for strongly nonlinear or chaotic drifts), and the noise
+      is still evaluated at the start of each sub-step, so it converges to the
+      Itô solution. With additive noise it has strong order 1.
 
     Example, an Ornstein–Uhlenbeck process::
 
@@ -41,10 +47,14 @@ class SDESystem(System):
         name: str | None = None,
         state_names: Sequence[str] | None = None,
         noise_enabled: bool = True,
+        method: str = "euler",
     ):
         super().__init__(name, state_names, noise_enabled)
         if not callable(f):
             raise TypeError("f must be callable as f(x, t)")
+        if method not in ("euler", "heun"):
+            raise ValueError("method must be 'euler' or 'heun'")
+        self.method = method
         if G is not None and not callable(G):
             raise TypeError("G must be callable as G(x, t) or None")
         if not max_step > 0:
@@ -61,16 +71,22 @@ class SDESystem(System):
         n_sub = max(1, math.ceil((t_next - t) / self.max_step - 1e-12))
         h = (t_next - t) / n_sub
         sqrt_h = math.sqrt(h)
+        noisy = self.G is not None and self.noise_enabled
         for i in range(n_sub):
             s = t + i * h
-            drift = np.asarray(self.f(x, s), dtype=float).reshape(-1)
-            if drift.shape != x.shape:
-                raise ValueError(f"f returned shape {drift.shape}, expected {x.shape}")
-            x_new = x + drift * h
-            if self.G is not None and self.noise_enabled:
-                x_new = x_new + self._diffusion_increment(x, s, sqrt_h, rng)
-            x = x_new
+            drift = self._drift(x, s)
+            noise = self._diffusion_increment(x, s, sqrt_h, rng) if noisy else 0.0
+            if self.method == "heun":
+                predicted = x + drift * h + noise
+                drift = 0.5 * (drift + self._drift(predicted, s + h))
+            x = x + drift * h + noise
         return x
+
+    def _drift(self, x, s):
+        drift = np.asarray(self.f(x, s), dtype=float).reshape(-1)
+        if drift.shape != x.shape:
+            raise ValueError(f"f returned shape {drift.shape}, expected {x.shape}")
+        return drift
 
     def _diffusion_increment(self, x, s, sqrt_h, rng):
         G = np.asarray(self.G(x, s), dtype=float)

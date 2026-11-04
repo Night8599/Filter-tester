@@ -109,6 +109,7 @@ class SingleRunSession(_Session):
         self.runner = Runner(self.source, self.make_filters())
         self.recorder = self.runner.start(rng=self.seed)
         self._sent_info = False
+        self._last_estimates = None
 
     def advance(self, budget: float = 0.03, until_t: float | None = None, metrics: bool = False):
         """Process steps for up to ``budget`` seconds (and not beyond ``until_t``)."""
@@ -118,7 +119,6 @@ class SingleRunSession(_Session):
         if not self._sent_info:
             out["info"] = self.info()
             self._sent_info = True
-        last = None
         while not self.recorder.done and time.perf_counter() < deadline:
             if until_t is not None and self.recorder.steps and self.recorder.steps[-1].t >= until_t:
                 break
@@ -133,10 +133,14 @@ class SingleRunSession(_Session):
             for name, e in estimates.items():
                 est_rows[name]["mean"].append(e.mean)
                 est_rows[name]["var"].append(np.diag(e.covariance))
-            last = estimates
+            self._last_estimates = estimates
         out["estimates"] = est_rows
-        if last is not None:
-            out["current"] = {n: {"mean": e.mean, "var": np.diag(e.covariance)} for n, e in last.items()}
+        # The latest estimate is always included once there is one, even if this
+        # call processed no new step (e.g. it only found out that the run ended).
+        if self._last_estimates is not None:
+            out["current"] = {
+                n: {"mean": e.mean, "var": np.diag(e.covariance)} for n, e in self._last_estimates.items()
+            }
         out["done"] = self.recorder.done
         t_now = self.recorder.steps[-1].t if self.recorder.steps else self.source.t_start
         span = self.source.t_end - self.source.t_start

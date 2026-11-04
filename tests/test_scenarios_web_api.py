@@ -30,17 +30,41 @@ def test_unknown_parameters_rejected():
 
 # --------------------------------------------------------------- scenarios
 @pytest.mark.parametrize("key", list(SCENARIOS))
-def test_every_scenario_builds_and_runs(key):
+def test_every_scenario_builds_and_runs_every_filter(key):
     sc = get_scenario(key)
     source = sc.source({"duration": 3.0})
-    kf = sc.make_filter("kf", sc.filter_defaults("kf"))
     steps = source.run(rng=0)
     assert steps[0].truth.size == len(sc.state_names)
-    est = [kf.step(s.t, s.measurements) for s in steps]
-    assert np.all(np.isfinite(est[-1].mean))
+    types = [ft.key for ft in sc.filter_types]
+    assert {"ekf", "ukf", "pf"} <= set(types)
+    for ft in types:
+        f = sc.make_filter(ft, sc.filter_defaults(ft))
+        est = [f.step(s.t, s.measurements) for s in steps]
+        assert np.all(np.isfinite(est[-1].mean)), (key, ft)
     d = sc.to_dict()
     json.dumps(d)  # JSON-friendly
-    assert d["filter_types"][0]["defaults"].keys() == {p["key"] for p in d["filter_types"][0]["params"]}
+    for ft in d["filter_types"]:
+        assert ft["defaults"].keys() == {p["key"] for p in ft["params"]}
+
+
+def test_kf_only_where_a_linear_model_exists():
+    assert {k for k, sc in SCENARIOS.items() if any(ft.key == "kf" for ft in sc.filter_types)} == {
+        "constant_velocity", "ornstein_uhlenbeck", "mass_spring", "pendulum"
+    }
+    pf = {p.key for p in get_scenario("lorenz").filter_type("pf").params}
+    assert {"n_particles", "resample_threshold", "regularization", "seed"} <= pf
+
+
+def test_lorenz_nonlinear_filters_ranking():
+    """On the chaotic Lorenz system the particle filter is the most consistent, the EKF the least."""
+    sc = get_scenario("lorenz")
+    system = {"duration": 6.0}
+    filters = {ft: sc.make_filter(ft, sc.filter_defaults(ft, system)) for ft in ("ekf", "ukf", "pf")}
+    result = MonteCarlo(sc.source(system), filters, runs=12).run()
+    inside = {n: mc_nees_consistency(result, n).fraction_inside for n in filters}
+    assert inside["pf"] > 0.8 and inside["pf"] >= inside["ekf"]
+    for n in filters:
+        assert mc_nis_consistency(result, n).fraction_inside > 0.8, n
 
 
 def test_filter_defaults_follow_the_true_system():
@@ -189,3 +213,10 @@ def test_json_has_no_nan():
     from filter_tester.web_api import _dump
 
     assert json.loads(_dump({"a": np.array([1.0, np.nan]), "b": np.float64(np.inf)})) == {"a": [1.0, None], "b": None}
+
+
+def test_current_estimate_is_kept_in_a_final_empty_chunk():
+    sid = web_api.create_session(config())
+    json.loads(web_api.advance(sid, '{"budget": 5}'))  # processes every step
+    final = json.loads(web_api.advance(sid, '{"budget": 5}'))  # nothing left to do
+    assert final["done"] and final["t"] == [] and set(final["current"]) == {"A", "B"}

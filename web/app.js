@@ -80,7 +80,8 @@ async function chooseScenario(key) {
   const typeSelect = $("#filter-type");
   typeSelect.replaceChildren(...state.scenario.filter_types.map((ft) => el("option", { value: ft.key, text: ft.label })));
   state.filters = [];
-  await addFilter(state.scenario.filter_types[0].key, "KF (matched)");
+  const first = state.scenario.filter_types[0].key;
+  await addFilter(first, `${shortName(first)} (matched)`);
 }
 
 function defaultsOf(params) {
@@ -112,8 +113,12 @@ async function addFilter(type, name) {
   const used = new Set(state.filters.map((f) => f.color));
   const color = COLORS.find((c) => !used.has(c)) ?? COLORS[id % COLORS.length];
   const params = await matchedDefaults(type);
-  state.filters.push({ id, type, name: name ?? uniqueName(`KF ${id}`), color, params, matched: { ...params } });
+  state.filters.push({ id, type, name: name ?? uniqueName(`${shortName(type)} ${state.filters.filter((f) => f.type === type).length + 1}`), color, params, matched: { ...params } });
   renderFilters();
+}
+
+function shortName(type) {
+  return type.toUpperCase();  // kf -> KF, ekf -> EKF, ukf -> UKF, pf -> PF
 }
 
 function uniqueName(base) {
