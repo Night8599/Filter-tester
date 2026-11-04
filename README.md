@@ -37,7 +37,7 @@ The key rule: **a filter never knows where its data comes from.** At each step i
 | Type | Contents |
 |---|---|
 | `Step` *(implemented)* | `t`, `measurements` (dict keyed by sensor name; empty when no sensor measured, and several sensors measuring at the same instant share one step), `truth` (optional, since real data may not have it) |
-| `Estimate` | `t`, `mean` and `covariance` (mandatory: the covariance is the filter's measure of uncertainty), plus optional `particles` / `weights`, `extras` |
+| `Estimate` *(implemented)* | `t`, `mean` and `covariance` (mandatory: the covariance is the filter's measure of uncertainty), `std` (square root of the diagonal), and `extras` for filter-specific data. Kalman-type filters put each sensor's innovation `(y, S)` in `extras["innovations"]` |
 | `Trajectory` | The full history of steps and estimates of one run, stored as arrays |
 
 ### 2. True systems (`systems/`) — implemented
@@ -94,8 +94,9 @@ These produce the sequence of `Step`s that the filters consume.
 
 These are what a filter believes about the world. They are independent from the true system.
 
-- **`ProcessModel`**: transition function `f`, process noise `Q`, and optionally a Jacobian and a sampling function.
-- **`MeasurementModel`**: measurement function `h`, measurement noise `R`, and optionally a Jacobian.
+- **`LinearProcessModel(A, Q)`** *(implemented)*: `x_next = A x + w`, `w ~ N(0, Q)`. `A` and `Q` are fixed matrices or functions of `dt`.
+- **`LinearMeasurementModel(H, R)`** *(implemented)*: `z = H x + v`, `v ~ N(0, R)`.
+- *Planned:* nonlinear process / measurement models (`f`, `h`, optional Jacobians and sampling functions) for EKF, UKF and particle filters.
 
 Each filter uses only what it needs. For example, a linear KF needs matrices, an EKF needs Jacobians (or numerical differentiation), and a particle filter needs to sample the noise.
 
@@ -103,25 +104,35 @@ Each filter uses only what it needs. For example, a linear KF needs matrices, an
 
 **Control inputs.** A filter may receive either the true control input or a noisy version of it; this is configured per experiment.
 
-### 6. Filters (`filters/`)
+### 6. Filters (`filters/`) — base classes and linear KF implemented
 
 There are two layers:
 
 ```python
 class Filter(ABC):
-    """Any filter: noisy inputs in, state estimate out."""
-    def reset(self, t0, rng): ...
-    def step(self, t, measurement, control=None) -> Estimate: ...
+    """Any filter: noisy measurements in, state estimate out."""
+    def reset(self): ...
+    def step(self, t, measurements) -> Estimate: ...   # measurements: {sensor name: z}, may be empty
 
 
 class BayesFilter(Filter):
-    """Filters with an explicit predict / update cycle."""
-    def predict(self, t, control=None): ...
-    def update(self, measurement): ...
-    # step() calls predict(), then update() only if a measurement is present
+    """Filters with an initial estimate (x0, P0) and a predict / update cycle."""
+    def predict(self, dt): ...
+    def update(self, sensor, z): ...
+    def knows_sensor(self, sensor) -> bool: ...
 ```
 
-Filters receive **every** step, including those without measurements (for example the points of a fine truth grid). On those steps a Bayesian filter only predicts, which also yields estimates at the full resolution of the truth. Because `predict` and `update` are separate, irregularly sampled data and multiple sensors are handled the same way.
+A filter receives only the time and the measurements of each step, never the truth. `BayesFilter.step` works like this:
+
+- On the **first step**, the estimate starts from `x0`, `P0` at that step's time, with no prediction. If the step has measurements, they are used right away.
+- On **later steps**, it predicts by the elapsed `dt` (skipped when `dt = 0`), then updates once per measurement.
+- **Measurements from sensors without a model are ignored**, so each filter can use a different subset of the sensors.
+
+Filters receive **every** step, including those without measurements (for example the points of a fine truth grid). On those steps a Bayesian filter only predicts, which also yields estimates at the full resolution of the truth.
+
+Implemented filters:
+
+- **`KalmanFilter(process, measurements, x0, P0)`**: linear Kalman filter. `measurements` maps sensor names to `LinearMeasurementModel`s. The covariance update uses the Joseph form for numerical robustness.
 
 ### 7. Experiments (`experiment/`)
 
@@ -262,6 +273,29 @@ source = CSVSource(mapping={
 
 See `examples/csv_source.py` for reading and plotting the sample files in `examples/data/`.
 
+### Kalman filter (available now)
+
+```python
+from filter_tester.filters import KalmanFilter
+from filter_tester.models import LinearMeasurementModel, LinearProcessModel
+
+kf = KalmanFilter(
+    process=LinearProcessModel(
+        A=lambda dt: np.array([[1.0, dt], [0.0, 1.0]]),
+        Q=lambda dt: np.diag([1e-3, 1e-2]) * dt,
+    ),
+    measurements={"gps": LinearMeasurementModel(H=[[1.0, 0.0]], R=[[0.04]])},
+    x0=[0.0, 0.0],
+    P0=np.eye(2),
+)
+
+kf.reset()
+estimates = [kf.step(s.t, s.measurements) for s in source.run()]   # any data source
+estimates[-1].mean, estimates[-1].covariance, estimates[-1].std
+```
+
+See `examples/kalman_filter.py` for the filter on the sample CSV data, plotted with ±3σ bounds against the truth.
+
 ### Plotting systems (available now)
 
 Both functions draw one subplot per state component against time:
@@ -284,7 +318,7 @@ Axis labels come from the `labels` argument if given, otherwise from the system'
 
 ### Full pipeline (planned API)
 
-> The examples below illustrate the intended design for the modules that are not implemented yet. Names may change during implementation.
+> Systems, sensors, sources and the Kalman filter below are implemented; `Runner` and the metrics are not yet. Names may change during implementation.
 
 
 
@@ -310,7 +344,7 @@ source = SimulatedSource(system, [sensor], times=np.arange(0, 10, dt))
 # The filter's own (possibly mismatched) model
 kf = KalmanFilter(
     process=LinearProcessModel(A=A, Q=np.diag([1e-3, 1e-2])),
-    measurement=LinearMeasurementModel(H=H, R=np.array([[0.25]])),
+    measurements={"gps": LinearMeasurementModel(H=H, R=np.array([[0.25]]))},
     x0=np.zeros(2), P0=np.eye(2),
 )
 
@@ -342,7 +376,7 @@ results = Runner(source, {"KF": kf}).run()                         # planned
 
 ## Extending the framework
 
-- **New filter:** subclass `Filter` (or `BayesFilter` if it has a predict/update cycle) and register it by name.
+- **New filter:** subclass `Filter` and implement `reset()` and `step(t, measurements) -> Estimate`. If it has a predict/update cycle, subclass `BayesFilter` and implement `predict(dt)`, `update(sensor, z)` and `knows_sensor(sensor)` (registration by name comes with the configuration files).
 - **New system:** subclass `System` and implement `_initial_state(t0, rng)` and `_advance(x, t, t_next, rng)`. Often you don't need a subclass: pass your own functions to `AnalyticSystem`, `DiscreteSystem` or `SDESystem`.
 - **New metric:** write a function that takes a `Trajectory` and returns a value.
 
@@ -358,7 +392,10 @@ The framework is built module by module, starting with the data generators.
 - [x] Simulated data source (truth grid + sensor times, one step per instant), per-run initial state
 - [x] CSV data source (one file per sensor, automatic or explicit columns, optional truth)
 - [x] Plots of true systems (states vs. time, static and live)
-- [ ] Core types, filters, runner, metrics, filter plots, configuration
+- [x] `Estimate`, filter base classes (`Filter`, `BayesFilter`), linear Kalman filter
+- [ ] Runner, metrics, filter plots
+- [ ] Nonlinear filters (EKF, UKF, particle filter)
+- [ ] Configuration files
 
 ---
 
