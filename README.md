@@ -204,8 +204,9 @@ Both functions draw one subplot per state component against time:
 import matplotlib.pyplot as plt
 from filter_tester.plotting import plot_states, plot_system
 
-# Simulate and plot in one call; live=True updates the figure while simulating
-fig, axes, states = plot_system(cv, times, rng=42, live=True)
+# Simulate and plot in one call; live=True updates the figure while simulating.
+# speed=1.0 paces it in real time (None = as fast as possible, 2.0 = twice as fast)
+fig, axes, states = plot_system(cv, times, rng=42, live=True, speed=1.0)
 
 # Plot states you already have, e.g. overlaying another run on the same axes
 plot_states(times, simulate(cv, times, rng=7), axes=axes, label="seed 7")
@@ -213,7 +214,7 @@ plot_states(times, simulate(cv, times, rng=7), axes=axes, label="seed 7")
 plt.show()
 ```
 
-Axis labels come from the `labels` argument if given, otherwise from the system's `state_names`, otherwise `x[0]`, `x[1]`, …. For custom live views, `LiveStatePlot(n_states, labels).update(t, x)` can be fed one state at a time. See `examples/plot_systems.py` for a complete script (`--static` disables live plotting).
+Axis labels come from the `labels` argument if given, otherwise from the system's `state_names`, otherwise `x[0]`, `x[1]`, …. For custom live views, `LiveStatePlot(n_states, labels).update(t, x)` can be fed one state at a time. See `examples/plot_systems.py` for a complete script (`--static` disables live plotting, `--speed 1` paces it in real time).
 
 ### Full pipeline (planned API)
 

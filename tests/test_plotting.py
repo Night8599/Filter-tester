@@ -127,3 +127,35 @@ def test_simulate_calls_on_step_for_every_time():
     states = simulate(make_cv(), TIMES, rng=0, on_step=lambda t, x: seen.append((t, x)))
     assert [t for t, _ in seen] == list(TIMES)
     assert np.allclose([x for _, x in seen], states)
+
+
+@pytest.mark.parametrize("speed, expected", [(1.0, 0.5), (5.0, 0.1)])
+def test_live_plot_paces_against_wall_clock(speed, expected, monkeypatch):
+    import time
+
+    # Drawing speed depends on the machine; only the pacing is measured here.
+    monkeypatch.setattr(LiveStatePlot, "_redraw", lambda self: None)
+    plot = LiveStatePlot(1, speed=speed)
+    start = time.perf_counter()
+    for t in np.linspace(0.0, 0.5, 26):
+        plot.update(t, [t])
+    elapsed = time.perf_counter() - start
+    assert expected * 0.95 <= elapsed <= expected + 0.15
+
+
+def test_live_plot_without_speed_does_not_wait(monkeypatch):
+    import time
+
+    monkeypatch.setattr(LiveStatePlot, "_redraw", lambda self: None)
+    plot = LiveStatePlot(1)
+    start = time.perf_counter()
+    for t in np.linspace(0.0, 100.0, 26):
+        plot.update(t, [t])
+    assert time.perf_counter() - start < 0.1
+
+
+def test_speed_requires_live_mode_and_positive_value():
+    with pytest.raises(ValueError):
+        plot_system(make_cv(), TIMES, rng=0, speed=1.0)
+    with pytest.raises(ValueError):
+        LiveStatePlot(2, speed=0.0)
