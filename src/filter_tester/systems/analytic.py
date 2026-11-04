@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -26,8 +26,14 @@ class AnalyticSystem(System):
     white perturbations rather than a process with memory.
     """
 
-    def __init__(self, g: AnalyticFn, noise: NoiseLike = None, name: str | None = None):
-        super().__init__(name)
+    def __init__(
+        self,
+        g: AnalyticFn,
+        noise: NoiseLike = None,
+        name: str | None = None,
+        state_names: Sequence[str] | None = None,
+    ):
+        super().__init__(name, state_names)
         if not callable(g):
             raise TypeError("g must be callable as g(t, w)")
         self.g = g

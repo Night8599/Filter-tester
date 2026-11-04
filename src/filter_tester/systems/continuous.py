@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Callable
+from typing import Callable, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -39,8 +39,9 @@ class SDESystem(System):
         G: DiffusionFn | None = None,
         max_step: float = 1e-3,
         name: str | None = None,
+        state_names: Sequence[str] | None = None,
     ):
-        super().__init__(name)
+        super().__init__(name, state_names)
         if not callable(f):
             raise TypeError("f must be callable as f(x, t)")
         if G is not None and not callable(G):

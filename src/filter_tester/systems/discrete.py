@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -38,8 +38,9 @@ class DiscreteSystem(System):
         x0: InitialState,
         noise: NoiseLike = None,
         name: str | None = None,
+        state_names: Sequence[str] | None = None,
     ):
-        super().__init__(name)
+        super().__init__(name, state_names)
         if not callable(f):
             raise TypeError("f must be callable as f(x, w, t, dt)")
         self.f = f
