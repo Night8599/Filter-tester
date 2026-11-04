@@ -57,6 +57,7 @@ def plot_system(
     title: str | None = None,
     live: bool = False,
     refresh_interval: float = 1 / 30,
+    speed: float | None = None,
     **line_kwargs,
 ):
     """Simulate ``system`` over ``times`` and plot its states.
@@ -66,11 +67,17 @@ def plot_system(
     a static figure at the end. Call ``plt.show()`` afterwards to keep the
     window open in a script.
 
+    ``speed`` (live mode only) paces the simulation against the wall clock:
+    ``None`` runs as fast as possible, ``1.0`` in real time (1 s simulated
+    takes 1 s), ``2.0`` twice as fast, ``0.5`` at half speed.
+
     Returns ``(fig, axes, states)``.
     """
     times = np.asarray(times, dtype=float).reshape(-1)
     labels = labels if labels is not None else system.state_names
     title = title if title is not None else system.name
+    if speed is not None and not live:
+        raise ValueError("speed only applies when live=True")
     if not live:
         states = simulate(system, times, rng)
         fig, axes = plot_states(times, states, labels, title, **line_kwargs)
@@ -83,7 +90,7 @@ def plot_system(
         if plot is None:  # state dimension is only known after reset()
             plot = LiveStatePlot(
                 x.size, labels, title, t_range=(times[0], times[-1]),
-                refresh_interval=refresh_interval, **line_kwargs,
+                refresh_interval=refresh_interval, speed=speed, **line_kwargs,
             )
         plot.update(t, x)
 
@@ -102,9 +109,14 @@ class LiveStatePlot:
             plot.update(t, system.advance(t))
         plot.finish()
 
-    Redraws are throttled to one every ``refresh_interval`` seconds so that
-    plotting does not dominate the simulation time. ``t_range`` fixes the
+    After each redraw, the next one waits at least ``refresh_interval``
+    seconds, so plotting does not dominate the simulation time. ``t_range`` fixes the
     time axis in advance; without it the axis grows with the data.
+
+    ``speed`` paces :meth:`update` against the wall clock: ``None`` does not
+    wait, ``1.0`` makes simulated time pass in real time, ``2.0`` twice as
+    fast. If the simulation is slower than the requested speed, it simply
+    runs as fast as it can.
     """
 
     def __init__(
@@ -114,8 +126,11 @@ class LiveStatePlot:
         title: str | None = None,
         t_range: tuple[float, float] | None = None,
         refresh_interval: float = 1 / 30,
+        speed: float | None = None,
         **line_kwargs,
     ):
+        if speed is not None and not speed > 0:
+            raise ValueError("speed must be positive or None")
         self._was_interactive = plt.isinteractive()
         plt.ion()
         self.fig, self.axes = _get_axes(n_states, resolve_labels(n_states, labels), title, None)
@@ -128,6 +143,8 @@ class LiveStatePlot:
         self._t: list[float] = []
         self._x: list[np.ndarray] = []
         self._last_draw = -np.inf
+        self.speed = None if speed is None else float(speed)
+        self._clock_start: tuple[float, float] | None = None  # (t, wall time) of the first update
         self._finished = False
 
     def update(self, t: float, x: ArrayLike) -> None:
@@ -137,12 +154,28 @@ class LiveStatePlot:
         x = np.asarray(x, dtype=float).reshape(-1)
         if x.size != len(self.lines):
             raise ValueError(f"expected {len(self.lines)} state components, got {x.size}")
-        self._t.append(float(t))
+        t = float(t)
+        self._t.append(t)
         self._x.append(x)
-        now = time.perf_counter()
-        if now - self._last_draw >= self.refresh_interval:
+        if time.perf_counter() - self._last_draw >= self.refresh_interval:
             self._redraw()
-            self._last_draw = now
+            # Measured after drawing, so slow redraws cannot take all the time.
+            self._last_draw = time.perf_counter()
+        self._wait_for(t)
+
+    def _wait_for(self, t: float) -> None:
+        """Sleep until the wall clock catches up with simulated time ``t``."""
+        if self.speed is None:
+            return
+        now = time.perf_counter()
+        if self._clock_start is None:
+            self._clock_start = (t, now)
+            return
+        t0, wall0 = self._clock_start
+        remaining = wall0 + (t - t0) / self.speed - now
+        if remaining > 0:
+            # Waits while letting the GUI process events, so the window stays responsive.
+            self.fig.canvas.start_event_loop(remaining)
 
     def finish(self) -> None:
         """Draw all received data and leave the figure as a static plot."""
