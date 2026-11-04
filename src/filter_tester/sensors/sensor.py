@@ -18,11 +18,14 @@ _TIME_TOL = 1e-9  # relative tolerance when matching times on a periodic grid
 class Sensor:
     """A sensor producing measurements ``z = h(x, v, t)``.
 
+    ``name`` is required and identifies the sensor's measurements in each
+    step, so it must be unique within a data source.
+
     ``v`` is a fresh noise sample per measurement (``None`` if no noise is
     given, zeros if noise is disabled), and may enter ``h`` in any way.
     Additive Gaussian noise on the position of ``[position, velocity]``::
 
-        Sensor(h=lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=0.1)
+        Sensor("gps", h=lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=0.1)
 
     When the sensor measures is defined in exactly one of two ways:
 
@@ -36,15 +39,17 @@ class Sensor:
 
     def __init__(
         self,
+        name: str,
         h: MeasurementFn,
         noise: NoiseLike = None,
         period: float | None = None,
         times: ArrayLike | None = None,
         offset: float = 0.0,
-        name: str | None = None,
         measurement_names: Sequence[str] | None = None,
         noise_enabled: bool = True,
     ):
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("name must be a non-empty string")
         if not callable(h):
             raise TypeError("h must be callable as h(x, v, t)")
         if (period is None) == (times is None):
@@ -63,7 +68,7 @@ class Sensor:
         self.period = period
         self.times = times
         self.offset = float(offset)
-        self.name = name or type(self).__name__
+        self.name = name
         self.measurement_names = None if measurement_names is None else [str(n) for n in measurement_names]
         self.noise_enabled = bool(noise_enabled)
         self._noise = NoiseTerm(noise)
