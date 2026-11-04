@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Callable
+from typing import Callable, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -21,7 +21,7 @@ class SDESystem(System):
     - ``G(x, t)`` (diffusion) returns either an ``(n, m)`` matrix, driven by an
       ``m``-dimensional Wiener process, or an ``(n,)`` vector, read as a diagonal
       matrix. ``G`` may depend on the state, so multiplicative noise is supported.
-      If ``G`` is ``None`` the system is deterministic.
+      If ``G`` is ``None``, or noise is disabled, the system is deterministic.
 
     Between two calls to :meth:`advance`, the interval is split into equal
     sub-steps no longer than ``max_step``. Smaller values are more accurate
@@ -39,8 +39,10 @@ class SDESystem(System):
         G: DiffusionFn | None = None,
         max_step: float = 1e-3,
         name: str | None = None,
+        state_names: Sequence[str] | None = None,
+        noise_enabled: bool = True,
     ):
-        super().__init__(name)
+        super().__init__(name, state_names, noise_enabled)
         if not callable(f):
             raise TypeError("f must be callable as f(x, t)")
         if G is not None and not callable(G):
@@ -65,7 +67,7 @@ class SDESystem(System):
             if drift.shape != x.shape:
                 raise ValueError(f"f returned shape {drift.shape}, expected {x.shape}")
             x_new = x + drift * h
-            if self.G is not None:
+            if self.G is not None and self.noise_enabled:
                 x_new = x_new + self._diffusion_increment(x, s, sqrt_h, rng)
             x = x_new
         return x

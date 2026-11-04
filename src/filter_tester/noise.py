@@ -76,3 +76,40 @@ def as_sampler(noise: NoiseLike) -> Sampler | None:
     if callable(noise):
         return noise
     raise TypeError("noise must be a Noise instance, a callable rng -> array, or None")
+
+
+class NoiseTerm:
+    """A noise source that can be switched off.
+
+    Used by systems and sensors. :meth:`draw` returns:
+
+    - ``None`` if no noise was given at all;
+    - a fresh sample if noise is enabled;
+    - a zero vector of the sample's shape if noise is disabled, so model
+      functions such as ``A @ x + w`` keep working and produce the
+      noiseless (nominal) value.
+    """
+
+    def __init__(self, noise: NoiseLike):
+        self.sampler = as_sampler(noise)
+        self._zero: np.ndarray | None = None
+
+    def draw(self, rng: np.random.Generator | None, enabled: bool = True) -> np.ndarray | None:
+        if self.sampler is None:
+            return None
+        if enabled:
+            if rng is None:
+                raise ValueError("a random generator is required to draw noise")
+            return np.asarray(self.sampler(rng), dtype=float)
+        return self.zero()
+
+    def zero(self) -> np.ndarray:
+        """Zero vector with the shape of one noise sample."""
+        if self._zero is None:
+            dim = getattr(self.sampler, "dim", None)
+            if dim is not None:
+                self._zero = np.zeros(dim)
+            else:
+                # Learn the shape from a throwaway generator, leaving the run's rng untouched.
+                self._zero = np.zeros_like(np.asarray(self.sampler(np.random.default_rng(0)), dtype=float))
+        return self._zero.copy()

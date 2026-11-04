@@ -57,15 +57,26 @@ Implementations:
 | `DiscreteSystem(f, x0, noise)` | `x_next = f(x, w, t, dt)` | one `w` per step; `dt` is the time since the previous call, so fixed and variable steps both work |
 | `SDESystem(f, x0, G, max_step)` | `dx = f(x, t) dt + G(x, t) dW` (Itô) | Wiener process, integrated with Euler–Maruyama in sub-steps of at most `max_step` |
 
-Noise is **general, not only additive**: `w` is passed to the model function, which decides how it enters the dynamics. A noise source is a `Noise` object (`GaussianNoise(cov, mean)`, `UniformNoise(low, high)`) or any callable `rng -> np.ndarray`. In `SDESystem`, `G` may depend on the state (multiplicative noise) and may be an `(n, m)` matrix or an `(n,)` diagonal. The initial state `x0` is either a fixed vector or a noise / callable that samples a random one at each `reset`.
+Noise is **general, not only additive**: `w` is passed to the model function, which decides how it enters the dynamics. A noise source is a `Noise` object from `filter_tester.noise` (`GaussianNoise(cov, mean)`, `UniformNoise(low, high)`) or any callable `rng -> np.ndarray`. In `SDESystem`, `G` may depend on the state (multiplicative noise) and may be an `(n, m)` matrix or an `(n,)` diagonal. The initial state `x0` is either a fixed vector or a noise / callable that samples a random one at each `reset`.
+
+Noise is **optional and easy to switch off**: set `system.noise_enabled = False` (or pass `noise_enabled=False`). The model then receives a zero noise vector (in `SDESystem`, the diffusion term is skipped), giving the nominal, noiseless trajectory. A random initial state is still sampled.
 
 `simulate(system, times, rng)` runs a system over a time grid and returns an array of shape `(len(times), n)`.
 
+Every system accepts an optional `state_names` list (e.g. `["position", "velocity"]`), used as axis labels in plots. `simulate` also accepts an `on_step(t, x)` callback, called after every time point.
+
 Control inputs are not supported yet.
 
-### 3. Sensors (`sensors/`)
+### 3. Sensors (`sensors/`) — implemented
 
-These turn the true state into measurements: `z = h(x, t) + v`, each with its own sampling rate. They are separate from systems so that the same system can be observed by different sensors. An experiment can combine **several sensors with different sampling rates** (multi-sensor fusion): each `Step` carries the measurements available at that time and which sensor produced them.
+These turn the true state into measurements: `Sensor(h, noise, period | times)` computes `z = h(x, v, t)`. As with systems, the noise `v` is general (passed to `h`), optional, and can be switched off with `sensor.noise_enabled = False`.
+
+When a sensor measures is defined in one of two ways:
+
+- `period=...` (with optional `offset`): measurements at `offset + k * period`, an absolute grid independent of when a run starts;
+- `times=[...]`: an explicit list of measurement times.
+
+`sensor.measurement_times(t_start, t_end)` lists the times in a window, and `sensor.measure(x, t, rng)` returns one measurement. Sensors are separate from systems so that the same system can be observed by different sensors. An experiment can combine **several sensors with different sampling rates** (multi-sensor fusion): each `Step` carries the measurements available at that time and which sensor produced them.
 
 ### 4. Data sources (`sources/`)
 
@@ -194,6 +205,45 @@ ou = SDESystem(f=lambda x, t: -1.5 * x, G=lambda x, t: [0.8], x0=[2.0], max_step
 states = simulate(cv, times, rng=42)   # shape (len(times), 2)
 ```
 
+### Sensors (available now)
+
+```python
+from filter_tester.noise import GaussianNoise
+from filter_tester.sensors import Sensor
+
+# Noisy position measurement every 0.5 s
+gps = Sensor(h=lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=0.5,
+             measurement_names=["position"])
+
+rng = np.random.default_rng(0)
+for t in gps.measurement_times(0.0, 2.0):          # [0.0, 0.5, 1.0, 1.5, 2.0]
+    z = gps.measure(states[int(round(t / dt))], t, rng)
+
+gps.noise_enabled = False                           # noiseless measurements
+```
+
+Connecting systems and sensors automatically over a run is the job of the upcoming simulated data source.
+
+### Plotting systems (available now)
+
+Both functions draw one subplot per state component against time:
+
+```python
+import matplotlib.pyplot as plt
+from filter_tester.plotting import plot_states, plot_system
+
+# Simulate and plot in one call; live=True updates the figure while simulating.
+# speed=1.0 paces it in real time (None = as fast as possible, 2.0 = twice as fast)
+fig, axes, states = plot_system(cv, times, rng=42, live=True, speed=1.0)
+
+# Plot states you already have, e.g. overlaying another run on the same axes
+plot_states(times, simulate(cv, times, rng=7), axes=axes, label="seed 7")
+
+plt.show()
+```
+
+Axis labels come from the `labels` argument if given, otherwise from the system's `state_names`, otherwise `x[0]`, `x[1]`, …. For custom live views, `LiveStatePlot(n_states, labels).update(t, x)` can be fed one state at a time. See `examples/plot_systems.py` for a complete script (`--static` disables live plotting, `--speed 1` paces it in real time).
+
 ### Full pipeline (planned API)
 
 > The examples below illustrate the intended design for the modules that are not implemented yet. Names may change during implementation.
@@ -265,9 +315,12 @@ results = Runner(source, {"KF": kf}).run()
 The framework is built module by module, starting with the data generators.
 
 - [x] True systems: analytic, discrete-time, SDE (Euler–Maruyama), general noise
-- [ ] Sensors and simulated data source
+- [x] Optional, switchable noise in systems and sensors
+- [x] Sensors (period or explicit times, general noise)
+- [ ] Simulated data source
 - [ ] CSV data source
-- [ ] Core types, filters, runner, metrics, plotting, configuration
+- [x] Plots of true systems (states vs. time, static and live)
+- [ ] Core types, filters, runner, metrics, filter plots, configuration
 
 ---
 
