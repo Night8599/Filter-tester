@@ -23,8 +23,11 @@ class AnalyticSystem(System):
         AnalyticSystem(lambda t, w: np.array([np.sin(t + w[0])]), GaussianNoise([[0.1]]))
 
     Samples at different times are independent, so this models a signal plus
-    white perturbations rather than a process with memory.
+    white perturbations rather than a process with memory. The initial state
+    is ``g(t0, w)``, so ``reset(x0=...)`` is not accepted.
     """
+
+    accepts_initial_state = False
 
     def __init__(
         self,
