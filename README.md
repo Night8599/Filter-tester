@@ -11,11 +11,11 @@ A Python framework for testing and comparing **stochastic filters** on **differe
 
 ## Features
 
-- **True systems**: analytic `x = g(t, w)`, discrete-time `x_next = f(x, w, t, dt)` and SDEs `dx = f dt + G dW`. Noise can enter the model in any way and is easy to switch off.
+- **True systems**: analytic `x = g(t, w)`, discrete-time `x_next = f(x, w, t, dt)` and SDEs `dx = f dt + G dW` (Euler–Maruyama or Heun). Noise can enter the model in any way and is easy to switch off.
 - **Sensors** with their own rates (a period or explicit times). Several sensors can be fused.
 - **Data sources**: simulation, with a fine truth grid plus the sensor times, or **CSV files**, one per sensor, with optional ground truth.
 - **Separate truth and model**: the system that generates the data is independent from what each filter believes, so wrong dynamics, `Q` or `R` can be tested directly.
-- **Filters**: a common interface (`Filter`, `BayesFilter`) and a linear **Kalman filter**.
+- **Filters**: linear **Kalman filter**, **extended** (EKF) and **unscented** (UKF) Kalman filters and a **particle filter**, all behind a common interface (`Filter`, `BayesFilter`).
 - **Metrics**: RMSE, NEES, NIS and time per step, with chi-square **consistency verdicts** (consistent / optimistic / pessimistic).
 - **Monte Carlo** experiments with per-instant chi-square bounds.
 - **Plots** (matplotlib): estimates with ±3σ, errors, metric tables, NEES/NIS over time and RMSE boxplots, both static and **live** while running.
@@ -101,7 +101,7 @@ system.noise_enabled = True
 - **Interface**: every system has `reset(t0, rng, x0)` and `advance(t)`.
 - **Noise**: `w` is passed to the model function, so it may enter the model in any way. A noise source is a `Noise` object (`GaussianNoise`, `UniformNoise`) or any callable `rng -> array`.
 - **Initial state**: `x0` can be a fixed vector or a noise that samples a random one.
-- **SDEs**: integrated with Euler–Maruyama in sub-steps of at most `max_step`. `G` may depend on the state.
+- **SDEs**: integrated in sub-steps of at most `max_step`, with `method="euler"` (Euler–Maruyama) or `method="heun"`. Heun uses a second-order drift and Itô noise, and is much more accurate for strongly nonlinear or chaotic drifts. `G` may depend on the state.
 - **Labels**: `state_names=[...]` sets the axis labels used in plots.
 
 ### Sensors
@@ -137,12 +137,33 @@ recorded = CSVSource(["examples/data/gps.csv", "examples/data/speedometer.csv", 
 
 ### Filters
 
+| Filter | Belief | Nonlinearity | Cost |
+|---|---|---|---|
+| `KalmanFilter` | one Gaussian | linear models only (exact) | lowest |
+| `ExtendedKalmanFilter` | one Gaussian | linearizes `f`, `h` with Jacobians (given or finite differences) | low |
+| `UnscentedKalmanFilter` | one Gaussian | propagates `2n+1` sigma points through `f`, `h`; no Jacobians | low |
+| `ParticleFilter` | `N` weighted samples | any; resampling when `N_eff` drops, optional regularization | ~`N`× higher |
+
 ```python
+from filter_tester.filters import ExtendedKalmanFilter, ParticleFilter, UnscentedKalmanFilter
+from filter_tester.models import MeasurementModel, ProcessModel, rk4
+
 my_filter = KalmanFilter(
     process=LinearProcessModel(A=A, Q=Q),                 # fixed matrices, or functions of dt
     measurements={"gps": LinearMeasurementModel(H=[[1, 0]], R=[[0.25]])},
     x0=[0.0, 0.0], P0=np.eye(2),
 )
+
+# Nonlinear models: x_next = f(x, dt) + w, z = h(x) + v. vectorized=True accepts batches (N, n).
+pendulum = ProcessModel(
+    rk4(lambda X: np.stack([X[..., 1], -9.81 * np.sin(X[..., 0])], -1)),   # integrates dx/dt with RK4
+    Q=lambda dt: 0.01 * dt * np.eye(2),
+    vectorized=True,
+)
+encoder = {"enc": MeasurementModel(lambda X: X[..., :1], R=[[0.003]], vectorized=True)}
+ekf = ExtendedKalmanFilter(pendulum, encoder, x0=[2.0, 0.0], P0=0.01 * np.eye(2))
+ukf = UnscentedKalmanFilter(pendulum, encoder, x0=[2.0, 0.0], P0=0.01 * np.eye(2), alpha=1.0, beta=2.0, kappa=0.0)
+pf = ParticleFilter(pendulum, encoder, x0=[2.0, 0.0], P0=0.01 * np.eye(2), n_particles=500, regularization=0.5, seed=0)
 ```
 
 Filters follow `Filter.step(t, measurements) -> Estimate(t, mean, covariance)`. A `BayesFilter`:
@@ -150,7 +171,13 @@ Filters follow `Filter.step(t, measurements) -> Estimate(t, mean, covariance)`. 
 - then predicts by the elapsed `dt` and updates once per measurement;
 - ignores sensors it has no model for.
 
-Steps without measurements only predict, which gives estimates at the full truth resolution. `KalmanFilter` uses the Joseph-form covariance update and stores each innovation `(y, S)` in `estimate.extras["innovations"]`.
+Steps without measurements only predict, which gives estimates at the full truth resolution.
+
+- **Linear models** work with every filter. With them, the EKF and UKF give exactly the KF's result.
+- **Innovations**: every filter stores each innovation `(y, S)` in `estimate.extras["innovations"]`, which the NIS uses. The particle filter computes it from the predicted cloud.
+- **Particle filter**:
+  - it is random, but `seed` makes it reproducible, and `reset()` restarts the same sequence;
+  - `regularization` adds a small jitter after resampling, which prevents the cloud from collapsing into copies of a few particles.
 
 ### Comparing filters
 
@@ -225,7 +252,7 @@ The verdicts compare the mean NEES / NIS with a 95% chi-square interval:
 
 - **Setup**:
   - choose a system and its true constants and sensors;
-  - add filters and tune each one's model, `Q`, `R` and initial estimate with sliders or typed values. New filters start matched to the truth, and *Match truth* resets them.
+  - add any mix of **KF, EKF, UKF and particle filters**, and tune each one's model, `Q`, `R` and initial estimate (plus α/β/κ for the UKF; particles, resampling and regularization for the PF) with sliders or typed values. New filters start matched to the truth, and *Match truth* resets them.
 - **Simulation**:
   - **single run**: truth, measurements and estimates ±3σ, live and optionally in real time;
   - **Monte Carlo**: NEES/NIS averaged over the runs, with their bounds.
@@ -234,12 +261,13 @@ The verdicts compare the mean NEES / NIS with a 95% chi-square interval:
   - in a single run, each filter's current mean and variance, and the variance over time;
   - in Monte Carlo, the mean and variance of the per-run RMSE, and its boxplots.
 
-| Scenario (`filter_tester.scenarios`) | True system | Kalman filter model |
+| Scenario (`filter_tester.scenarios`) | True system | Filter models |
 |---|---|---|
 | Constant velocity | random acceleration; GPS, optional speedometer | exact |
 | Ornstein–Uhlenbeck | `dx = −θx dt + σ dW` | exact discretization |
 | Mass–spring–damper | damped oscillator, random force | exact discretization |
-| Pendulum (nonlinear) | `θ̈ = −(g/L) sin θ − cθ̇ + σw` | small-angle `sin θ ≈ θ`, which degrades at large angles |
+| Pendulum (nonlinear) | `θ̈ = −(g/L) sin θ − cθ̇ + σw` | KF: small-angle `sin θ ≈ θ`, which degrades at large angles; EKF/UKF/PF: nonlinear model |
+| Lorenz (chaotic) | `ẋ = σ(y−x)`, `ẏ = x(ρ−z)−y`, `ż = xy−βz` + noise | EKF, UKF and PF only |
 
 The page runs this package with [Pyodide](https://pyodide.org). The first visit downloads Python, numpy and scipy, which takes a few seconds. To run it locally with regular Python, use `python web/dev_server.py` and open `http://localhost:8000/?backend=server`.
 
@@ -253,6 +281,7 @@ The page runs this package with [Pyodide](https://pyodide.org). The first visit 
 | `examples/kalman_filter.py` | a Kalman filter on the CSV data, ±3σ vs. truth |
 | `examples/compare_filters.py` | matched vs. optimistic vs. pessimistic filters, live, then figures and table |
 | `examples/monte_carlo.py` | the same comparison over 100 runs (`--runs N`, `--static`) |
+| `examples/nonlinear_filters.py` | KF vs. EKF vs. UKF vs. PF on the pendulum (small and large swing) and on the Lorenz system |
 
 ## Extending
 
@@ -270,8 +299,8 @@ src/filter_tester/
   noise.py       GaussianNoise, UniformNoise
   sensors/       Sensor
   sources/       SimulatedSource, CSVSource
-  models/        LinearProcessModel, LinearMeasurementModel
-  filters/       Filter, BayesFilter, KalmanFilter
+  models/        LinearProcessModel, LinearMeasurementModel, ProcessModel, MeasurementModel, rk4
+  filters/       Filter, BayesFilter, KalmanFilter, ExtendedKalmanFilter, UnscentedKalmanFilter, ParticleFilter
   experiment/    Runner, MonteCarlo, Trajectory
   metrics/       RMSE, NEES, NIS, consistency, summary tables
   plotting/      static and live matplotlib plots (optional dependency)
@@ -296,9 +325,9 @@ On every push to `main`, `.github/workflows/pages.yml` runs the tests, builds th
 
 ## Roadmap
 
-- Nonlinear filters: extended and unscented Kalman filters, particle filter
-- The Lorenz system and a nonlinear-filter comparison in the web interface
 - Control inputs
+- More filters, e.g. square-root and ensemble Kalman filters, and smoothers (RTS)
+- Non-Gaussian measurement noise in the particle filter
 
 ## License
 

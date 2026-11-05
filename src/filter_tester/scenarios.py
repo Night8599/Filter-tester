@@ -10,8 +10,13 @@ Scenarios:
 - ``constant_velocity``: position / velocity with random acceleration.
 - ``ornstein_uhlenbeck``: a process pulled back to zero (SDE).
 - ``mass_spring``: damped oscillator driven by random force (SDE).
-- ``pendulum``: nonlinear pendulum (SDE); the Kalman filter uses the
-  small-angle linear model, which breaks down at large angles.
+- ``pendulum``: nonlinear pendulum (SDE); the linear Kalman filter uses the
+  small-angle model, which breaks down at large angles, while the EKF, UKF
+  and particle filter use the nonlinear model.
+- ``lorenz``: the chaotic Lorenz system (SDE), for the nonlinear filters only.
+
+Every scenario offers each filter that applies to it (KF, EKF, UKF, PF).
+They share the same model constants, and the UKF and PF add their own.
 """
 
 from __future__ import annotations
@@ -24,8 +29,12 @@ import numpy as np
 from scipy.linalg import expm
 
 from .filters.base import Filter
+from .filters.ekf import ExtendedKalmanFilter
 from .filters.kalman import KalmanFilter
+from .filters.particle import ParticleFilter
+from .filters.ukf import UnscentedKalmanFilter
 from .models.linear import LinearMeasurementModel, LinearProcessModel
+from .models.nonlinear import MeasurementModel, ProcessModel, rk4
 from .noise import GaussianNoise
 from .sensors.sensor import Sensor
 from .sources.simulated import SimulatedSource
@@ -168,10 +177,10 @@ def _sensor_params(key, label, R, period, group, enabled=None):
     return tuple(params)
 
 
-def _filter_init_params(names, x0, P0, group="Initial estimate"):
+def _filter_init_params(names, x0, P0, group="Initial estimate", limit=20.0):
     params = []
     for i, n in enumerate(names):
-        params.append(Param(f"x0_{i}", f"Initial {n}", x0[i], -20.0, 20.0, 0.1, group=group))
+        params.append(Param(f"x0_{i}", f"Initial {n}", x0[i], -limit, limit, 0.1, group=group))
     for i, n in enumerate(names):
         params.append(Param(f"P0_{i}", f"Initial variance of {n}", P0[i], 1e-4, 100.0, log=True, group=group))
     return tuple(params)
@@ -202,6 +211,64 @@ def _H(index, n):
     H = np.zeros((1, n))
     H[0, index] = 1.0
     return H
+
+
+UKF_PARAMS = (
+    Param("alpha", "Spread α", 1.0, 0.01, 1.0, log=True, group="Unscented transform",
+          help="How far the sigma points are from the mean (small α keeps them close)."),
+    Param("beta", "Prior knowledge β", 2.0, 0.0, 4.0, 0.1, group="Unscented transform",
+          help="2 is optimal for Gaussian distributions."),
+    Param("kappa", "Secondary scaling κ", 0.0, 0.0, 3.0, 0.1, group="Unscented transform"),
+)
+
+PF_PARAMS = (
+    Param("n_particles", "Number of particles", 500, 20, 5000, 10, kind="int", group="Particles",
+          help="More particles: more accurate and slower."),
+    Param("resample_threshold", "Resample when N_eff / N below", 0.5, 0.0, 1.0, 0.05, group="Particles",
+          help="Resampling fights weight degeneracy; 1 = every update, 0 = never."),
+    Param("regularization", "Regularization (jitter after resampling)", 0.5, 0.0, 2.0, 0.05, group="Particles",
+          help="0 = plain bootstrap filter; 1 = optimal-bandwidth jitter, which keeps the cloud diverse."),
+    Param("seed", "Random seed", 0, 0, 100000, 1, kind="int", group="Particles"),
+)
+
+FILTER_DESCRIPTIONS = {
+    "ekf": "Linearizes the model around the current estimate (Jacobians).",
+    "ukf": "Propagates sigma points through the nonlinear model; no Jacobians.",
+    "pf": "A weighted cloud of samples; handles any nonlinearity, at a higher cost.",
+}
+
+
+def _family(n, model_params, build_models, build_linear=None, kf_label="Kalman filter (KF)", kf_description=""):
+    """The filter types of a scenario: KF (if a linear model exists), EKF, UKF and PF.
+
+    ``build_models(values)`` returns ``(process, {sensor: measurement model})``,
+    used by the EKF, UKF and PF; ``build_linear(values)`` returns the linear
+    models used by the KF.
+    """
+
+    def init(v):
+        return _x0(v, n), _P0(v, n)
+
+    types = []
+    if build_linear is not None:
+        types.append(FilterType("kf", kf_label, model_params, lambda v: KalmanFilter(*build_linear(v), *init(v)), kf_description))
+    types += [
+        FilterType("ekf", "Extended Kalman filter (EKF)", model_params,
+                   lambda v: ExtendedKalmanFilter(*build_models(v), *init(v)), FILTER_DESCRIPTIONS["ekf"]),
+        FilterType("ukf", "Unscented Kalman filter (UKF)", model_params + UKF_PARAMS,
+                   lambda v: UnscentedKalmanFilter(*build_models(v), *init(v), alpha=v["alpha"], beta=v["beta"], kappa=v["kappa"]),
+                   FILTER_DESCRIPTIONS["ukf"]),
+        FilterType("pf", "Particle filter (PF)", model_params + PF_PARAMS,
+                   lambda v: ParticleFilter(*build_models(v), *init(v), n_particles=v["n_particles"],
+                                            resample_threshold=v["resample_threshold"],
+                                            regularization=v["regularization"], seed=v["seed"]),
+                   FILTER_DESCRIPTIONS["pf"]),
+    ]
+    return tuple(types)
+
+
+def _white_acceleration_Q(sigma):
+    return lambda dt: sigma**2 * np.array([[dt**3 / 3, dt**2 / 2], [dt**2 / 2, dt]])
 
 
 def discretize(F: np.ndarray, L: np.ndarray, q: float, dt: float) -> tuple[np.ndarray, np.ndarray]:
@@ -241,14 +308,14 @@ def _cv_source(v):
     return SimulatedSource(system, sensors, _times(v))
 
 
-def _cv_filter(v):
+def _cv_models(v):
     A, Q = _cv_matrices(v["q"])
     models = {}
     if v["use_gps"]:
         models["gps"] = LinearMeasurementModel(_H(0, 2), [[v["gps_R"]]])
     if v["use_speed"]:
         models["speed"] = LinearMeasurementModel(_H(1, 2), [[v["speed_R"]]])
-    return KalmanFilter(LinearProcessModel(A, Q), models, _x0(v, 2), _P0(v, 2))
+    return LinearProcessModel(A, Q), models
 
 
 CONSTANT_VELOCITY = Scenario(
@@ -266,12 +333,9 @@ CONSTANT_VELOCITY = Scenario(
     + _sensor_params("gps", "GPS", 0.25, 0.5, "GPS (position)")
     + _sensor_params("speed", "Speedometer", 0.01, 0.2, "Speedometer (velocity)", enabled=False),
     build_source=_cv_source,
-    filter_types=(
-        FilterType(
-            key="kf",
-            label="Kalman filter (linear)",
-            description="Constant-velocity model with white-noise acceleration.",
-            params=(
+    filter_types=_family(
+        2,
+        (
                 Param("q", "Process noise intensity q", 0.05, 1e-4, 10.0, log=True, group="Process model",
                       help="How much the filter expects the velocity to change."),
                 Param("use_gps", "Use GPS", True, kind="bool", group="Measurements"),
@@ -280,8 +344,10 @@ CONSTANT_VELOCITY = Scenario(
                 Param("speed_R", "Speedometer noise variance R", 0.01, 1e-4, 10.0, log=True, group="Measurements"),
             )
             + _filter_init_params(("position", "velocity"), (0.0, 0.0), (1.0, 1.0)),
-            build=_cv_filter,
-        ),
+        build_models=_cv_models,
+        build_linear=_cv_models,
+        kf_label="Kalman filter (KF)",
+        kf_description="Constant-velocity model with white-noise acceleration.",
     ),
     sensor_state={"gps": 0, "speed": 1},
     matched_defaults={"q": "q", "gps_R": "gps_R", "speed_R": "speed_R"},
@@ -292,6 +358,7 @@ CONSTANT_VELOCITY = Scenario(
 def _ou_source(v):
     theta, sigma = v["theta"], v["sigma"]
     system = SDESystem(
+        method="heun",
         f=lambda x, t: -theta * x,
         G=lambda x, t: [sigma],
         x0=[v["x0"]],
@@ -301,15 +368,13 @@ def _ou_source(v):
     return SimulatedSource(system, [_sensor("sensor", 0, v)], _times(v))
 
 
-def _ou_filter(v):
+def _ou_models(v):
     theta, sigma = v["theta"], v["sigma"]
     process = LinearProcessModel(
         A=lambda dt: np.array([[math.exp(-theta * dt)]]),
         Q=lambda dt: np.array([[sigma**2 / (2 * theta) * (1 - math.exp(-2 * theta * dt))]]),
     )
-    return KalmanFilter(
-        process, {"sensor": LinearMeasurementModel([[1.0]], [[v["sensor_R"]]])}, _x0(v, 1), _P0(v, 1)
-    )
+    return process, {"sensor": LinearMeasurementModel([[1.0]], [[v["sensor_R"]]])}
 
 
 ORNSTEIN_UHLENBECK = Scenario(
@@ -326,19 +391,18 @@ ORNSTEIN_UHLENBECK = Scenario(
     )
     + _sensor_params("sensor", "Sensor", 0.05, 0.25, "Sensor"),
     build_source=_ou_source,
-    filter_types=(
-        FilterType(
-            key="kf",
-            label="Kalman filter (linear)",
-            description="Exact discretization of the OU process.",
-            params=(
+    filter_types=_family(
+        1,
+        (
                 Param("theta", "Model mean reversion θ", 1.0, 0.01, 10.0, log=True, group="Process model"),
                 Param("sigma", "Model volatility σ", 0.5, 0.01, 5.0, log=True, group="Process model"),
                 Param("sensor_R", "Sensor noise variance R", 0.05, 1e-4, 10.0, log=True, group="Measurements"),
             )
             + _filter_init_params(("x",), (0.0,), (4.0,)),
-            build=_ou_filter,
-        ),
+        build_models=_ou_models,
+        build_linear=_ou_models,
+        kf_label="Kalman filter (KF)",
+        kf_description="Exact discretization of the OU process.",
     ),
     sensor_state={"sensor": 0},
     matched_defaults={"theta": "theta", "sigma": "sigma", "sensor_R": "sensor_R"},
@@ -353,7 +417,7 @@ def _spring_F(omega, zeta):
 _L2 = np.array([[0.0], [1.0]])
 
 
-def _linear_kf_2d(F, sigma, v, sensor):
+def _linear_models_2d(F, sigma, v, sensor):
     cache: dict[float, tuple[np.ndarray, np.ndarray]] = {}
 
     def AQ(dt):  # the time steps repeat, so each (A, Q) is computed once
@@ -363,15 +427,14 @@ def _linear_kf_2d(F, sigma, v, sensor):
         return cache[key]
 
     process = LinearProcessModel(A=lambda dt: AQ(dt)[0], Q=lambda dt: AQ(dt)[1])
-    return KalmanFilter(
-        process, {sensor: LinearMeasurementModel(_H(0, 2), [[v[f"{sensor}_R"]]])}, _x0(v, 2), _P0(v, 2)
-    )
+    return process, {sensor: LinearMeasurementModel(_H(0, 2), [[v[f"{sensor}_R"]]])}
 
 
 def _spring_source(v):
     F = _spring_F(v["omega"], v["zeta"])
     sigma = v["sigma"]
     system = SDESystem(
+        method="heun",
         f=lambda x, t: F @ x,
         G=lambda x, t: [0.0, sigma],
         x0=[v["x0_pos"], v["x0_vel"]],
@@ -381,8 +444,8 @@ def _spring_source(v):
     return SimulatedSource(system, [_sensor("sensor", 0, v)], _times(v))
 
 
-def _spring_filter(v):
-    return _linear_kf_2d(_spring_F(v["omega"], v["zeta"]), v["sigma"], v, "sensor")
+def _spring_models(v):
+    return _linear_models_2d(_spring_F(v["omega"], v["zeta"]), v["sigma"], v, "sensor")
 
 
 MASS_SPRING = Scenario(
@@ -401,20 +464,19 @@ MASS_SPRING = Scenario(
     )
     + _sensor_params("sensor", "Position sensor", 0.01, 0.1, "Sensor"),
     build_source=_spring_source,
-    filter_types=(
-        FilterType(
-            key="kf",
-            label="Kalman filter (linear)",
-            description="Exact discretization of the oscillator.",
-            params=(
+    filter_types=_family(
+        2,
+        (
                 Param("omega", "Model frequency ω [rad/s]", 2.0, 0.1, 20.0, log=True, group="Process model"),
                 Param("zeta", "Model damping ratio ζ", 0.1, 0.0, 2.0, 0.01, group="Process model"),
                 Param("sigma", "Model random force σ", 0.5, 0.01, 10.0, log=True, group="Process model"),
                 Param("sensor_R", "Sensor noise variance R", 0.01, 1e-4, 10.0, log=True, group="Measurements"),
             )
             + _filter_init_params(("position", "velocity"), (0.0, 0.0), (1.0, 1.0)),
-            build=_spring_filter,
-        ),
+        build_models=_spring_models,
+        build_linear=_spring_models,
+        kf_label="Kalman filter (KF)",
+        kf_description="Exact discretization of the oscillator.",
     ),
     sensor_state={"sensor": 0},
     matched_defaults={"omega": "omega", "zeta": "zeta", "sigma": "sigma", "sensor_R": "sensor_R"},
@@ -428,6 +490,7 @@ G_ACCEL = 9.81
 def _pendulum_source(v):
     w2, c, sigma = G_ACCEL / v["length"], v["damping"], v["sigma"]
     system = SDESystem(
+        method="heun",
         f=lambda x, t: np.array([x[1], -w2 * math.sin(x[0]) - c * x[1]]),
         G=lambda x, t: [0.0, sigma],
         x0=[math.radians(v["angle0"]), v["omega0"]],
@@ -437,11 +500,21 @@ def _pendulum_source(v):
     return SimulatedSource(system, [_sensor("encoder", 0, v)], _times(v))
 
 
-def _pendulum_filter(v):
+def _pendulum_linear(v):
     # Small-angle model: sin(angle) ~ angle, i.e. a mass-spring with w^2 = g / L, 2 zeta w = c.
     w = math.sqrt(G_ACCEL / v["length"])
     F = np.array([[0.0, 1.0], [-(w**2), -v["damping"]]])
-    return _linear_kf_2d(F, v["sigma"], v, "encoder")
+    return _linear_models_2d(F, v["sigma"], v, "encoder")
+
+
+def _pendulum_nonlinear(v):
+    w2, c = G_ACCEL / v["length"], v["damping"]
+
+    def deriv(X):
+        return np.stack([X[..., 1], -w2 * np.sin(X[..., 0]) - c * X[..., 1]], axis=-1)
+
+    process = ProcessModel(rk4(deriv, max_step=0.01), Q=_white_acceleration_Q(v["sigma"]), vectorized=True)
+    return process, {"encoder": LinearMeasurementModel(_H(0, 2), [[v["encoder_R"]]])}
 
 
 PENDULUM = Scenario(
@@ -460,28 +533,111 @@ PENDULUM = Scenario(
     )
     + _sensor_params("encoder", "Encoder", 0.003, 0.1, "Encoder (angle)"),
     build_source=_pendulum_source,
-    filter_types=(
-        FilterType(
-            key="kf",
-            label="Kalman filter (linear, small-angle model)",
-            description="Linearized pendulum: sin θ ≈ θ.",
-            params=(
+    filter_types=_family(
+        2,
+        (
                 Param("length", "Model length L [m]", 1.0, 0.1, 10.0, log=True, group="Process model"),
                 Param("damping", "Model damping c [1/s]", 0.1, 0.0, 2.0, 0.01, group="Process model"),
                 Param("sigma", "Model random torque σ", 0.2, 0.001, 5.0, log=True, group="Process model"),
                 Param("encoder_R", "Encoder noise variance R", 0.003, 1e-4, 10.0, log=True, group="Measurements"),
             )
             + _filter_init_params(("angle", "angular velocity"), (0.0, 0.0), (1.0, 1.0)),
-            build=_pendulum_filter,
-        ),
+        build_models=_pendulum_nonlinear,
+        build_linear=_pendulum_linear,
+        kf_label="Kalman filter (KF, small-angle model)",
+        kf_description="Linearized pendulum: sin θ ≈ θ.",
     ),
     sensor_state={"encoder": 0},
     matched_defaults={"length": "length", "damping": "damping", "sigma": "sigma", "encoder_R": "encoder_R"},
 )
 
 
+# ------------------------------------------------------------------- Lorenz
+def _lorenz_deriv(sigma, rho, beta):
+    def deriv(X):
+        x, y, z = X[..., 0], X[..., 1], X[..., 2]
+        return np.stack([sigma * (y - x), x * (rho - z) - y, x * y - beta * z], axis=-1)
+
+    return deriv
+
+
+def _lorenz_source(v):
+    deriv = _lorenz_deriv(v["sigma"], v["rho"], v["beta"])
+    noise = v["noise"]
+    system = SDESystem(
+        method="heun",
+        f=lambda x, t: deriv(x),
+        G=lambda x, t: [noise, noise, noise],
+        x0=[v["x0_x"], v["x0_y"], v["x0_z"]],
+        max_step=min(v["dt"] / 4, 0.0025),
+        state_names=["x", "y", "z"],
+    )
+    sensors = [_sensor("x_sensor", 0, v)]
+    if v["z_sensor_on"]:
+        sensors.append(_sensor("z_sensor", 2, v))
+    return SimulatedSource(system, sensors, _times(v))
+
+
+def _lorenz_models(v):
+    noise = v["noise"]
+    process = ProcessModel(
+        rk4(_lorenz_deriv(v["sigma"], v["rho"], v["beta"]), max_step=0.005),
+        Q=lambda dt: noise**2 * dt * np.eye(3),
+        vectorized=True,
+    )
+    models = {}
+    if v["use_x_sensor"]:
+        models["x_sensor"] = LinearMeasurementModel(_H(0, 3), [[v["x_sensor_R"]]])
+    if v["use_z_sensor"]:
+        models["z_sensor"] = LinearMeasurementModel(_H(2, 3), [[v["z_sensor_R"]]])
+    return process, models
+
+
+LORENZ = Scenario(
+    key="lorenz",
+    title="Lorenz system (chaotic)",
+    description="ẋ = σ(y − x), ẏ = x(ρ − z) − y, ż = xy − βz, plus random noise. Small errors grow "
+    "exponentially, so the filter must keep correcting. A sensor measures x and, optionally, another measures z. "
+    "Only the nonlinear filters apply.",
+    state_names=("x", "y", "z"),
+    system_params=_run_params(duration=10.0, dt=0.01)
+    + (
+        Param("sigma", "σ", 10.0, 0.1, 30.0, 0.1, group="System"),
+        Param("rho", "ρ", 28.0, 0.5, 50.0, 0.5, group="System"),
+        Param("beta", "β", 8.0 / 3.0, 0.1, 10.0, 0.01, group="System"),
+        Param("noise", "Random noise σ_w", 0.5, 0.001, 10.0, log=True, group="System"),
+        Param("x0_x", "Initial x", -8.0, -30.0, 30.0, 0.1, group="System"),
+        Param("x0_y", "Initial y", 7.0, -30.0, 30.0, 0.1, group="System"),
+        Param("x0_z", "Initial z", 27.0, 0.0, 60.0, 0.1, group="System"),
+    )
+    + _sensor_params("x_sensor", "x sensor", 1.0, 0.05, "x sensor")
+    + _sensor_params("z_sensor", "z sensor", 1.0, 0.1, "z sensor", enabled=False),
+    build_source=_lorenz_source,
+    filter_types=_family(
+        3,
+        (
+            Param("sigma", "Model σ", 10.0, 0.1, 30.0, 0.1, group="Process model"),
+            Param("rho", "Model ρ", 28.0, 0.5, 50.0, 0.5, group="Process model"),
+            Param("beta", "Model β", 8.0 / 3.0, 0.1, 10.0, 0.01, group="Process model"),
+            Param("noise", "Model noise σ_w", 0.5, 0.001, 10.0, log=True, group="Process model"),
+            Param("use_x_sensor", "Use x sensor", True, kind="bool", group="Measurements"),
+            Param("x_sensor_R", "x sensor noise variance R", 1.0, 1e-4, 10.0, log=True, group="Measurements"),
+            Param("use_z_sensor", "Use z sensor", True, kind="bool", group="Measurements"),
+            Param("z_sensor_R", "z sensor noise variance R", 1.0, 1e-4, 10.0, log=True, group="Measurements"),
+        )
+        + _filter_init_params(("x", "y", "z"), (-7.0, 6.0, 26.0), (4.0, 4.0, 4.0), limit=60.0),
+        build_models=_lorenz_models,
+    ),
+    sensor_state={"x_sensor": 0, "z_sensor": 2},
+    matched_defaults={
+        "sigma": "sigma", "rho": "rho", "beta": "beta", "noise": "noise",
+        "x_sensor_R": "x_sensor_R", "z_sensor_R": "z_sensor_R",
+    },
+)
+
+
 SCENARIOS: dict[str, Scenario] = {
-    s.key: s for s in (CONSTANT_VELOCITY, ORNSTEIN_UHLENBECK, MASS_SPRING, PENDULUM)
+    s.key: s for s in (CONSTANT_VELOCITY, ORNSTEIN_UHLENBECK, MASS_SPRING, PENDULUM, LORENZ)
 }
 
 

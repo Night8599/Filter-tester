@@ -75,7 +75,12 @@ def wait_finished(page, timeout=60000):
 
 def test_setup_tab(page):
     options = page.locator("#scenario option").all_inner_texts()
-    assert options == ["Constant velocity", "Ornstein–Uhlenbeck process", "Mass–spring–damper", "Pendulum (nonlinear)"]
+    assert options == [
+        "Constant velocity", "Ornstein–Uhlenbeck process", "Mass–spring–damper", "Pendulum (nonlinear)",
+        "Lorenz system (chaotic)",
+    ]
+    types = page.locator("#filter-type option").all_inner_texts()
+    assert types == ["Kalman filter (KF)", "Extended Kalman filter (EKF)", "Unscented Kalman filter (UKF)", "Particle filter (PF)"]
     assert page.locator(".filter-card").count() == 1
     assert page.locator("#system-params .param").count() > 5
     page.click("#add-filter")
@@ -150,3 +155,31 @@ def test_stop_and_validation(page):
     t_now = float(page.locator("#progress-text").inner_text().split()[2])
     assert 0 < t_now < 3  # paced at 1x real time
     assert page.locator("#start").is_enabled() and not page.locator("#stop-top").is_visible()
+
+
+def test_nonlinear_filters_on_lorenz(page):
+    page.select_option("#scenario", "lorenz")
+    page.wait_for_function("document.querySelector('.filter-card input').value === 'EKF (matched)'")
+    assert page.locator("#filter-type option").all_inner_texts() == [
+        "Extended Kalman filter (EKF)", "Unscented Kalman filter (UKF)", "Particle filter (PF)"
+    ]
+    set_number(page, "#system-params", "Duration [s]", 3)
+    for t in ("ukf", "pf"):
+        page.select_option("#filter-type", t)
+        page.click("#add-filter")
+    page.wait_for_function("document.querySelectorAll('.filter-card').length === 3")
+    names = [page.locator(".filter-card input[type=text]").nth(i).input_value() for i in range(3)]
+    assert names == ["EKF (matched)", "UKF 1", "PF 1"]
+    pf_card = page.locator(".filter-card").nth(2)
+    assert pf_card.locator("label:text-is('Number of particles')").count() == 1
+    assert page.locator(".filter-card").nth(1).locator("label:text-is('Spread α')").count() == 1
+    set_number(page, ".filter-card:nth-child(3)", "Number of particles", 200)
+    page.select_option("#speed", "0")
+    page.click("#start")
+    wait_finished(page)
+    assert page.locator("#sim-single canvas").count() == 3  # x, y, z
+    shot(page, "simulation-lorenz")
+    page.click("button[data-tab=metrics]")
+    rows = page.locator("#metrics-table tbody tr")
+    assert [rows.nth(i).locator("td").first.inner_text() for i in range(3)] == names
+    shot(page, "metrics-lorenz")

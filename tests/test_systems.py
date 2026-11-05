@@ -205,3 +205,30 @@ def test_initial_state_override_can_be_random():
 def test_analytic_system_rejects_initial_state():
     with pytest.raises(TypeError):
         AnalyticSystem(lambda t, w: [t]).reset(x0=[1.0])
+
+
+def test_heun_is_second_order_for_the_drift():
+    def final(method, step):
+        s = SDESystem(f=lambda x, t: np.array([x[1], -np.sin(x[0])]), x0=[2.0, 0.0], max_step=step, method=method)
+        s.reset()
+        return s.advance(3.0)
+
+    reference = final("heun", 1e-4)
+    err = {m: [np.abs(final(m, h) - reference).max() for h in (0.02, 0.01)] for m in ("euler", "heun")}
+    assert err["euler"][0] / err["euler"][1] == pytest.approx(2, rel=0.25)  # first order
+    assert err["heun"][0] / err["heun"][1] == pytest.approx(4, rel=0.25)  # second order
+    assert err["heun"][1] < err["euler"][1] / 50
+
+
+def test_heun_keeps_the_ito_noise():
+    theta, sigma, T = 1.5, 0.8, 1.0
+    system = SDESystem(f=lambda x, t: -theta * x, G=lambda x, t: [sigma], x0=[2.0], max_step=1e-2, method="heun")
+    finals = np.array([(system.reset(0.0, rng=s), system.advance(T))[1][0] for s in range(4000)])
+    assert abs(finals.mean() - 2.0 * np.exp(-theta * T)) < 0.03
+    var = sigma**2 / (2 * theta) * (1 - np.exp(-2 * theta * T))
+    assert abs(finals.var() - var) / var < 0.08
+
+
+def test_sde_method_validation():
+    with pytest.raises(ValueError):
+        SDESystem(f=lambda x, t: x, x0=[0.0], method="rk4")
