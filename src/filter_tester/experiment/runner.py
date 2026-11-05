@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Mapping, Sequence
 
 import numpy as np
 
@@ -72,6 +72,7 @@ class RunResult:
 
     @property
     def filter_names(self) -> list[str]:
+        """Names of the filters, in the order they were given."""
         return list(self.trajectories)
 
 
@@ -111,7 +112,7 @@ class Runner:
                 observer(step, estimates)
         return recorder.result()
 
-    def start(self, rng=None, x0=None) -> "RunRecorder":
+    def start(self, rng=None, x0=None) -> RunRecorder:
         """Start a run that is advanced step by step (e.g. by an interactive UI).
 
         Iterating the returned :class:`RunRecorder` processes one step at a
@@ -179,9 +180,7 @@ def _trajectory(name: str, records, truth: np.ndarray | None) -> Trajectory:
     estimates = [e for e, _ in records]
     mean = np.array([e.mean for e in estimates])
     if truth is not None and truth.shape[1] != mean.shape[1]:
-        raise ValueError(
-            f"filter {name!r} estimates {mean.shape[1]} states but the truth has {truth.shape[1]}"
-        )
+        raise ValueError(f"filter {name!r} estimates {mean.shape[1]} states but the truth has {truth.shape[1]}")
     innovations = [
         (e.t, sensor, np.asarray(y), np.asarray(S))
         for e in estimates

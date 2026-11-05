@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Mapping
 
 import numpy as np
 
@@ -55,14 +55,17 @@ class MonteCarloResult:
 
     @property
     def n_runs(self) -> int:
+        """Number of runs aggregated."""
         return len(self.seeds)
 
     @property
     def filter_names(self) -> list[str]:
+        """Names of the filters, in the order they were given."""
         return list(self.stats)
 
     @property
     def has_truth(self) -> bool:
+        """Whether the runs had ground truth (needed for NEES and RMSE)."""
         return bool(np.isfinite(next(iter(self.stats.values())).nees).any())
 
     def __getitem__(self, name: str) -> FilterStats:
@@ -104,6 +107,12 @@ class MonteCarlo:
         observers: Iterable[RunObserver] = (),
         first_seed: int = 0,
     ) -> MonteCarloResult:
+        """Run every seed and return the aggregate.
+
+        ``x0`` overrides the system's initial state, ``keep_runs`` keeps each
+        run's full :class:`RunResult`, ``observers`` are called after each run
+        with ``(k, run, partial aggregate)`` and ``first_seed`` shifts the seeds.
+        """
         observers = list(observers)
         # The partial aggregate is only built when someone looks at it.
         for k, run, partial in self.iter_runs(x0, keep_runs, first_seed, build_partial=bool(observers)):
@@ -186,7 +195,10 @@ class _Accumulator:
             )
         n = next(iter(stats.values())).rmse.shape[1]
         return MonteCarloResult(
-            t=self.t, seeds=list(self.seeds), state_dim=n, stats=stats,
+            t=self.t,
+            seeds=list(self.seeds),
+            state_dim=n,
+            stats=stats,
             runs=None if runs is None else list(runs),
         )
 

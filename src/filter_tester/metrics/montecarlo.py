@@ -55,22 +55,26 @@ class MonteCarloConsistency:
 
     @property
     def consistent(self) -> bool:
+        """Whether ANEES / ANIS lies inside its chi-square interval."""
         return self.lower <= self.mean <= self.upper
 
     @property
     def verdict(self) -> str:
+        """``consistent``, ``optimistic`` (above the interval) or ``pessimistic`` (below)."""
         if self.consistent:
             return "consistent"
         return "optimistic" if self.mean > self.upper else "pessimistic"
 
 
 def mc_nees_consistency(result: MonteCarloResult, name: str, confidence: float = 0.95) -> MonteCarloConsistency:
+    """ANEES of one filter with its interval, verdict and share of instants inside the bounds."""
     t, mean, lower, upper = mc_nees(result, name, confidence)
     dof = np.full(mean.size, result.state_dim)
     return _overall(mean, dof, lower, upper, result.n_runs, confidence)
 
 
 def mc_nis_consistency(result: MonteCarloResult, name: str, confidence: float = 0.95) -> MonteCarloConsistency:
+    """ANIS of one filter with its interval, verdict and share of instants inside the bounds."""
     t, mean, lower, upper = mc_nis(result, name, confidence)
     return _overall(mean, result[name].nis_dim, lower, upper, result.n_runs, confidence)
 
@@ -130,13 +134,11 @@ def mc_summary_table(
     return header, body
 
 
-def format_mc_summary(
-    result: MonteCarloResult, state_names: list[str] | None = None, confidence: float = 0.95
-) -> str:
+def format_mc_summary(result: MonteCarloResult, state_names: list[str] | None = None, confidence: float = 0.95) -> str:
     """The Monte Carlo summary as aligned plain text."""
     header, body = mc_summary_table(result, state_names, confidence)
     widths = [max(len(row[i]) for row in [header, *body]) for i in range(len(header))]
-    line = lambda cells: "  ".join(c.ljust(w) for c, w in zip(cells, widths))  # noqa: E731
+    line = lambda cells: "  ".join(c.ljust(w) for c, w in zip(cells, widths, strict=True))  # noqa: E731
     title = f"Monte Carlo: {result.n_runs} runs (seeds {result.seeds[0]}–{result.seeds[-1]})"
     return "\n".join([title, line(header), "  ".join("-" * w for w in widths), *map(line, body)])
 

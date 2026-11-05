@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, Sequence, Union
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -11,8 +11,8 @@ from numpy.typing import ArrayLike
 from ..noise import Noise
 
 # An initial state is either a fixed vector or something that samples one.
-InitialState = Union[ArrayLike, Noise, Callable[[np.random.Generator], np.ndarray]]
-RngLike = Union[np.random.Generator, int, None]
+InitialState = ArrayLike | Noise | Callable[[np.random.Generator], np.ndarray]
+RngLike = np.random.Generator | int | None
 
 
 class System(ABC):
@@ -55,9 +55,7 @@ class System(ABC):
         self._rng: np.random.Generator | None = None
 
     # ------------------------------------------------------------------ API
-    def reset(
-        self, t0: float = 0.0, rng: RngLike = None, x0: InitialState | None = None
-    ) -> np.ndarray:
+    def reset(self, t0: float = 0.0, rng: RngLike = None, x0: InitialState | None = None) -> np.ndarray:
         """Start a new run at time ``t0`` and return the initial state.
 
         ``rng`` may be a ``numpy.random.Generator``, an integer seed, or
@@ -76,9 +74,7 @@ class System(ABC):
         else:
             self._x = sample_initial_state(x0, self._rng)
         if self.state_names is not None and len(self.state_names) != self._x.size:
-            raise ValueError(
-                f"{len(self.state_names)} state_names given for a state of dimension {self._x.size}"
-            )
+            raise ValueError(f"{len(self.state_names)} state_names given for a state of dimension {self._x.size}")
         return self._x.copy()
 
     def advance(self, t: float) -> np.ndarray:

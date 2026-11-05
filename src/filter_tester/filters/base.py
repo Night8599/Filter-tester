@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import numpy as np
 
@@ -66,11 +67,17 @@ class BayesFilter(Filter):
         self.reset()
 
     def reset(self) -> None:
+        """Go back to the initial estimate ``x0``, ``P0``; the next step starts a new run."""
         self.x = self.x0.copy()
         self.P = self.P0.copy()
         self.t: float | None = None
 
     def step(self, t: float, measurements: Mapping[str, np.ndarray]) -> Estimate:
+        """Predict to ``t``, update with each known measurement, return the estimate.
+
+        The first step after :meth:`reset` does not predict: ``x0``, ``P0`` hold
+        at that step's time. Measurements from unknown sensors are ignored.
+        """
         t = float(t)
         if self.t is not None:
             if t < self.t:

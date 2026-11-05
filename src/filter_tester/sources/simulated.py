@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterator, Sequence
+from collections.abc import Iterator, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -51,10 +51,12 @@ class SimulatedSource:
 
     @property
     def t_start(self) -> float:
+        """Start of a run (first time of the truth grid)."""
         return float(self.times[0])
 
     @property
     def t_end(self) -> float:
+        """End of a run (last time of the truth grid)."""
         return float(self.times[-1])
 
     def schedule(self) -> list[tuple[float, list[Sensor]]]:
@@ -83,7 +85,7 @@ class SimulatedSource:
         ``x0`` overrides the system's initial state for this run.
         """
         system_seed, *sensor_seeds = _spawn(rng, 1 + len(self.sensors))
-        sensor_rngs = {s.name: np.random.default_rng(seed) for s, seed in zip(self.sensors, sensor_seeds)}
+        sensor_rngs = {s.name: np.random.default_rng(seed) for s, seed in zip(self.sensors, sensor_seeds, strict=True)}
         schedule = self.schedule()
         x = self.system.reset(schedule[0][0], np.random.default_rng(system_seed), x0=x0)
         for k, (t, group) in enumerate(schedule):

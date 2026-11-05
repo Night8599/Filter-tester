@@ -9,6 +9,12 @@ A Python framework for testing and comparing **stochastic filters** on **differe
 
 **[▶ Try the web interface](https://night8599.github.io/Filter-tester/)**: pick a system, add filters, change their constants with sliders and watch the estimates and metrics live. Nothing to install.
 
+<p align="center">
+  <img src="docs/images/demo.gif" alt="A pendulum swinging at 120°: the linear Kalman filter (blue) drifts away from the truth while the EKF, UKF and particle filter follow it" width="820">
+  <br>
+  <em>A pendulum released at 120°. The linear Kalman filter (blue) relies on the small-angle model and drifts away from the truth; the EKF, UKF and particle filter follow it.</em>
+</p>
+
 ## Features
 
 - **True systems**: analytic `x = g(t, w)`, discrete-time `x_next = f(x, w, t, dt)` and SDEs `dx = f dt + G dW` (Euler–Maruyama or Heun). Noise can enter the model in any way and is easy to switch off.
@@ -250,6 +256,12 @@ The verdicts compare the mean NEES / NIS with a 95% chi-square interval:
 
 **https://night8599.github.io/Filter-tester/**
 
+| Setup | Metrics |
+|---|---|
+| ![Setup tab: true system constants on the left, one card per filter with sliders for its model, noise and initial estimate](docs/images/setup.png) | ![Metrics tab: RMSE, NEES and NIS per filter with consistency verdicts; the small-angle Kalman filter is flagged optimistic](docs/images/metrics.png) |
+
+![Simulation tab: angle and angular velocity of the pendulum with each filter's estimate and ±3σ band](docs/images/simulation.png)
+
 - **Setup**:
   - choose a system and its true constants and sensors;
   - add any mix of **KF, EKF, UKF and particle filters**, and tune each one's model, `Q`, `R` and initial estimate (plus α/β/κ for the UKF; particles, resampling and regularization for the PF) with sliders or typed values. New filters start matched to the truth, and *Match truth* resets them.
@@ -309,19 +321,21 @@ src/filter_tester/
 examples/        runnable scripts and sample data
 web/             web interface: page, canvas charts, build script, dev server
 tests/           pytest suite, including end-to-end tests of the web interface
+docs/images/     screenshots used in this README
 ```
 
 ## Development
 
 ```bash
-pip install -e ".[test]"
+pip install -e ".[dev]"                  # pytest, matplotlib and ruff
+ruff check . && ruff format --check .    # lint and formatting (also run in CI)
 pytest                                   # the UI tests are skipped without Playwright + Chrome
 pip install -e ".[ui-test]"              # adds Playwright for tests/test_web_ui.py
 python web/dev_server.py                 # local web interface: http://localhost:8000/?backend=server
 python web/build.py                      # builds the static site into web/dist/
 ```
 
-On every push to `main`, `.github/workflows/pages.yml` runs the tests, builds the site and deploys it to GitHub Pages. This requires *Settings → Pages → Source: GitHub Actions*.
+On every push to `main`, `.github/workflows/pages.yml` lints the code, runs the tests, builds the site and deploys it to GitHub Pages. This requires *Settings → Pages → Source: GitHub Actions*.
 
 ## Roadmap
 

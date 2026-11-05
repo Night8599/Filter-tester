@@ -11,7 +11,7 @@ the order of the filters).
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,7 +43,7 @@ def plot_estimates(
         known = first.has_truth
         for i, ax in enumerate(axes):
             ax.plot(first.t[known], first.truth[known, i], color="k", lw=1.2, label="truth")
-    for color, name in zip(_colors(result), result.filter_names):
+    for color, name in zip(_colors(result), result.filter_names, strict=True):
         if name not in names:
             continue
         traj = result[name]
@@ -72,8 +72,8 @@ def plot_errors(
     if not first.has_truth.any():
         raise ValueError("plot_errors needs the ground truth")
     n = first.mean.shape[1]
-    fig, axes = _get_axes(n, [f"error {l}" for l in resolve_labels(n, labels)], title, None)
-    for color, name in zip(_colors(result), result.filter_names):
+    fig, axes = _get_axes(n, [f"error {label}" for label in resolve_labels(n, labels)], title, None)
+    for color, name in zip(_colors(result), result.filter_names, strict=True):
         if name not in names:
             continue
         traj = result[name]
@@ -181,7 +181,7 @@ class LiveFilterPlot(LiveFigure):
         self.fig, self.axes = _get_axes(n, resolve_labels(n, self.labels), self.title, None)
         self._truth_lines = [ax.plot([], [], color="k", lw=1.2, label="truth")[0] for ax in self.axes]
         colors = [f"C{i % 10}" for i in range(len(self._names))]
-        self._colors = dict(zip(self._names, colors))
+        self._colors = dict(zip(self._names, colors, strict=True))
         self._lines = {
             name: [ax.plot([], [], color=self._colors[name], lw=1.2, label=name)[0] for ax in self.axes]
             for name in self._names
@@ -210,8 +210,12 @@ class LiveFilterPlot(LiveFigure):
                 if self._bands[name][i] is not None:
                     self._bands[name][i].remove()
                 self._bands[name][i] = ax.fill_between(
-                    t, mean[:, i] - std[:, i], mean[:, i] + std[:, i],
-                    color=self._colors[name], alpha=0.18, lw=0,
+                    t,
+                    mean[:, i] - std[:, i],
+                    mean[:, i] + std[:, i],
+                    color=self._colors[name],
+                    alpha=0.18,
+                    lw=0,
                 )
         for ax in self.axes:
             ax.relim()

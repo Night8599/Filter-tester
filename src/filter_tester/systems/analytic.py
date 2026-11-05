@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
 
-from .base import System
 from ..noise import NoiseLike, NoiseTerm
+from .base import System
 
 AnalyticFn = Callable[[float, "np.ndarray | None"], ArrayLike]
 

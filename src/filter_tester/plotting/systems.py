@@ -11,7 +11,7 @@ Axis labels come from ``labels`` if given, otherwise from the system's
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -92,8 +92,13 @@ def plot_system(
         nonlocal plot
         if plot is None:  # state dimension is only known after reset()
             plot = LiveStatePlot(
-                x.size, labels, title, t_range=(times[0], times[-1]),
-                refresh_interval=refresh_interval, speed=speed, **line_kwargs,
+                x.size,
+                labels,
+                title,
+                t_range=(times[0], times[-1]),
+                refresh_interval=refresh_interval,
+                speed=speed,
+                **line_kwargs,
             )
         plot.update(t, x)
 
@@ -153,7 +158,7 @@ class LiveStatePlot(LiveFigure):
         if not self._t:
             return
         data = np.array(self._x)
-        for i, (ax, line) in enumerate(zip(self.axes, self.lines)):
+        for i, (ax, line) in enumerate(zip(self.axes, self.lines, strict=True)):
             line.set_data(self._t, data[:, i])
             ax.relim()
             ax.autoscale_view(scalex=not self._fixed_t)
@@ -178,7 +183,7 @@ def _get_axes(n, labels, title, axes):
         return axes[0].figure, axes
     fig, grid = plt.subplots(n, 1, sharex=True, squeeze=False, figsize=(8, 1.2 + 1.8 * n))
     axes = list(grid[:, 0])
-    for ax, label in zip(axes, labels):
+    for ax, label in zip(axes, labels, strict=True):
         ax.set_ylabel(label)
         ax.grid(True, alpha=0.3)
     axes[-1].set_xlabel("t")

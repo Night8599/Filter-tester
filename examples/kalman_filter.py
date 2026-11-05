@@ -46,7 +46,7 @@ rmse = np.sqrt(np.mean((mean - truth) ** 2, axis=0))
 print(f"RMSE position = {rmse[0]:.3f}, velocity = {rmse[1]:.3f}")
 
 fig, axes = plt.subplots(2, 1, sharex=True, figsize=(8, 5))
-for i, (ax, label) in enumerate(zip(axes, source.columns("truth"))):
+for i, (ax, label) in enumerate(zip(axes, source.columns("truth"), strict=True)):
     ax.plot(tt, truth[:, i], "k", lw=1, label="truth")
     ax.plot(t, mean[:, i], label="KF estimate")
     ax.fill_between(t, mean[:, i] - 3 * std[:, i], mean[:, i] + 3 * std[:, i], alpha=0.25, label="±3σ")

@@ -17,7 +17,7 @@ and :func:`as_measurement_model` convert them.
 
 from __future__ import annotations
 
-from typing import Callable, Union
+from collections.abc import Callable
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -61,9 +61,11 @@ class ProcessModel:
         return np.array([self.f(x, dt) for x in X])
 
     def Q(self, dt: float) -> np.ndarray:
+        """Process noise covariance for a time step ``dt``."""
         return _square(self._Q(dt) if callable(self._Q) else self._Q, "Q")
 
     def jacobian(self, x: np.ndarray, dt: float) -> np.ndarray:
+        """``∂f/∂x`` at ``x``: the given Jacobian, or central finite differences."""
         if self._F is not None:
             return np.atleast_2d(np.asarray(self._F(x, dt), dtype=float))
         if self.vectorized:  # all perturbed states in one call
@@ -95,9 +97,11 @@ class MeasurementModel:
 
     @property
     def dim(self) -> int:
+        """Dimension of a measurement."""
         return self.R.shape[0]
 
     def h(self, x: np.ndarray) -> np.ndarray:
+        """Noise-free measurement of one state ``(n,)``, shape ``(m,)``."""
         if self.vectorized:
             z = np.asarray(self._h(x[None, :]), dtype=float).reshape(-1)
         else:
@@ -113,6 +117,7 @@ class MeasurementModel:
         return np.array([self.h(x) for x in X])
 
     def jacobian(self, x: np.ndarray) -> np.ndarray:
+        """``∂h/∂x`` at ``x``: the given Jacobian, or central finite differences."""
         if self._H is not None:
             return np.atleast_2d(np.asarray(self._H(x), dtype=float))
         if self.vectorized:
@@ -120,8 +125,8 @@ class MeasurementModel:
         return numerical_jacobian(self.h, x)
 
 
-AnyProcessModel = Union[ProcessModel, LinearProcessModel]
-AnyMeasurementModel = Union[MeasurementModel, LinearMeasurementModel]
+AnyProcessModel = ProcessModel | LinearProcessModel
+AnyMeasurementModel = MeasurementModel | LinearMeasurementModel
 
 
 def as_process_model(model: AnyProcessModel) -> ProcessModel:
@@ -158,7 +163,9 @@ def numerical_jacobian(fn: Callable[[np.ndarray], np.ndarray], x: np.ndarray) ->
         h = steps[i]
         e = np.zeros_like(x)
         e[i] = h
-        J[:, i] = (np.asarray(fn(x + e), dtype=float).reshape(-1) - np.asarray(fn(x - e), dtype=float).reshape(-1)) / (2 * h)
+        forward = np.asarray(fn(x + e), dtype=float).reshape(-1)
+        backward = np.asarray(fn(x - e), dtype=float).reshape(-1)
+        J[:, i] = (forward - backward) / (2 * h)
     return J
 
 

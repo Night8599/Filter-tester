@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Callable, Union
+from collections.abc import Callable
 
 import numpy as np
 from numpy.typing import ArrayLike
 
-MatrixOrFn = Union[ArrayLike, Callable[[float], ArrayLike]]
+MatrixOrFn = ArrayLike | Callable[[float], ArrayLike]
 
 
 class LinearProcessModel:
@@ -30,9 +30,11 @@ class LinearProcessModel:
         self._Q = Q
 
     def A(self, dt: float) -> np.ndarray:
+        """Transition matrix for a time step ``dt``."""
         return _square(self._A(dt) if callable(self._A) else self._A, "A")
 
     def Q(self, dt: float) -> np.ndarray:
+        """Process noise covariance for a time step ``dt``."""
         return _square(self._Q(dt) if callable(self._Q) else self._Q, "Q")
 
 

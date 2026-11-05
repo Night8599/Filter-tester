@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -26,6 +26,7 @@ class Step:
 
     @property
     def has_measurements(self) -> bool:
+        """Whether any sensor measured at this step."""
         return bool(self.measurements)
 
 

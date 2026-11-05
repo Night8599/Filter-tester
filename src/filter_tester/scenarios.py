@@ -22,8 +22,9 @@ They share the same model constants, and the UKF and PF add their own.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping
+from typing import Any
 
 import numpy as np
 from scipy.linalg import expm
@@ -34,7 +35,7 @@ from .filters.kalman import KalmanFilter
 from .filters.particle import ParticleFilter
 from .filters.ukf import UnscentedKalmanFilter
 from .models.linear import LinearMeasurementModel, LinearProcessModel
-from .models.nonlinear import MeasurementModel, ProcessModel, rk4
+from .models.nonlinear import ProcessModel, rk4
 from .noise import GaussianNoise
 from .sensors.sensor import Sensor
 from .sources.simulated import SimulatedSource
@@ -62,6 +63,7 @@ class Param:
     help: str = ""
 
     def coerce(self, value) -> float | int | bool:
+        """Convert ``value`` to this parameter's kind and check its range."""
         if self.kind == "bool":
             return bool(value)
         v = int(round(float(value))) if self.kind == "int" else float(value)
@@ -72,6 +74,7 @@ class Param:
         return v
 
     def to_dict(self) -> dict[str, Any]:
+        """JSON-friendly description, used by the web interface."""
         return {k: getattr(self, k) for k in self.__dataclass_fields__}
 
 
@@ -88,6 +91,13 @@ class FilterType:
 
 @dataclass(frozen=True)
 class Scenario:
+    """A true system with its sensors, plus the filters that can estimate it.
+
+    ``system_params`` are the true constants (they build the data source);
+    each :class:`FilterType` has the constants a filter believes. Filter
+    constants listed in ``matched_defaults`` default to the true values.
+    """
+
     key: str
     title: str
     description: str
@@ -105,6 +115,7 @@ class Scenario:
         return _values(self.system_params, values)
 
     def filter_type(self, key: str) -> FilterType:
+        """The :class:`FilterType` with the given key (``kf``, ``ekf``, ``ukf`` or ``pf``)."""
         for ft in self.filter_types:
             if ft.key == key:
                 return ft
@@ -120,9 +131,11 @@ class Scenario:
         return defaults
 
     def source(self, values: Mapping[str, Any] | None = None) -> SimulatedSource:
+        """The simulated data source for the given true constants (missing keys use defaults)."""
         return self.build_source(self.system_values(values))
 
     def make_filter(self, filter_type: str, values: Mapping[str, Any] | None = None) -> Filter:
+        """Build a filter of the given type with the given constants (missing keys use defaults)."""
         ft = self.filter_type(filter_type)
         return ft.build(_values(ft.params, values))
 
@@ -161,8 +174,16 @@ def _values(params, values) -> dict[str, Any]:
 def _run_params(duration=30.0, dt=0.05):
     return (
         Param("duration", "Duration [s]", duration, 2.0, 200.0, 1.0, group="Run"),
-        Param("dt", "Truth time step [s]", dt, 0.005, 0.5, 0.005, group="Run",
-              help="Resolution of the true trajectory; the filters also predict at these times."),
+        Param(
+            "dt",
+            "Truth time step [s]",
+            dt,
+            0.005,
+            0.5,
+            0.005,
+            group="Run",
+            help="Resolution of the true trajectory; the filters also predict at these times.",
+        ),
     )
 
 
@@ -201,7 +222,7 @@ def _times(v):
 def _sensor(name, index, v):
     return Sensor(
         name,
-        lambda x, w, t, i=index: x[i:i + 1] + w,
+        lambda x, w, t, i=index: x[i : i + 1] + w,
         noise=GaussianNoise([[v[f"{name}_R"]]]),
         period=v[f"{name}_period"],
     )
@@ -214,20 +235,61 @@ def _H(index, n):
 
 
 UKF_PARAMS = (
-    Param("alpha", "Spread α", 1.0, 0.01, 1.0, log=True, group="Unscented transform",
-          help="How far the sigma points are from the mean (small α keeps them close)."),
-    Param("beta", "Prior knowledge β", 2.0, 0.0, 4.0, 0.1, group="Unscented transform",
-          help="2 is optimal for Gaussian distributions."),
+    Param(
+        "alpha",
+        "Spread α",
+        1.0,
+        0.01,
+        1.0,
+        log=True,
+        group="Unscented transform",
+        help="How far the sigma points are from the mean (small α keeps them close).",
+    ),
+    Param(
+        "beta",
+        "Prior knowledge β",
+        2.0,
+        0.0,
+        4.0,
+        0.1,
+        group="Unscented transform",
+        help="2 is optimal for Gaussian distributions.",
+    ),
     Param("kappa", "Secondary scaling κ", 0.0, 0.0, 3.0, 0.1, group="Unscented transform"),
 )
 
 PF_PARAMS = (
-    Param("n_particles", "Number of particles", 500, 20, 5000, 10, kind="int", group="Particles",
-          help="More particles: more accurate and slower."),
-    Param("resample_threshold", "Resample when N_eff / N below", 0.5, 0.0, 1.0, 0.05, group="Particles",
-          help="Resampling fights weight degeneracy; 1 = every update, 0 = never."),
-    Param("regularization", "Regularization (jitter after resampling)", 0.5, 0.0, 2.0, 0.05, group="Particles",
-          help="0 = plain bootstrap filter; 1 = optimal-bandwidth jitter, which keeps the cloud diverse."),
+    Param(
+        "n_particles",
+        "Number of particles",
+        500,
+        20,
+        5000,
+        10,
+        kind="int",
+        group="Particles",
+        help="More particles: more accurate and slower.",
+    ),
+    Param(
+        "resample_threshold",
+        "Resample when N_eff / N below",
+        0.5,
+        0.0,
+        1.0,
+        0.05,
+        group="Particles",
+        help="Resampling fights weight degeneracy; 1 = every update, 0 = never.",
+    ),
+    Param(
+        "regularization",
+        "Regularization (jitter after resampling)",
+        0.5,
+        0.0,
+        2.0,
+        0.05,
+        group="Particles",
+        help="0 = plain bootstrap filter; 1 = optimal-bandwidth jitter, which keeps the cloud diverse.",
+    ),
     Param("seed", "Random seed", 0, 0, 100000, 1, kind="int", group="Particles"),
 )
 
@@ -251,18 +313,40 @@ def _family(n, model_params, build_models, build_linear=None, kf_label="Kalman f
 
     types = []
     if build_linear is not None:
-        types.append(FilterType("kf", kf_label, model_params, lambda v: KalmanFilter(*build_linear(v), *init(v)), kf_description))
+        types.append(
+            FilterType("kf", kf_label, model_params, lambda v: KalmanFilter(*build_linear(v), *init(v)), kf_description)
+        )
     types += [
-        FilterType("ekf", "Extended Kalman filter (EKF)", model_params,
-                   lambda v: ExtendedKalmanFilter(*build_models(v), *init(v)), FILTER_DESCRIPTIONS["ekf"]),
-        FilterType("ukf", "Unscented Kalman filter (UKF)", model_params + UKF_PARAMS,
-                   lambda v: UnscentedKalmanFilter(*build_models(v), *init(v), alpha=v["alpha"], beta=v["beta"], kappa=v["kappa"]),
-                   FILTER_DESCRIPTIONS["ukf"]),
-        FilterType("pf", "Particle filter (PF)", model_params + PF_PARAMS,
-                   lambda v: ParticleFilter(*build_models(v), *init(v), n_particles=v["n_particles"],
-                                            resample_threshold=v["resample_threshold"],
-                                            regularization=v["regularization"], seed=v["seed"]),
-                   FILTER_DESCRIPTIONS["pf"]),
+        FilterType(
+            "ekf",
+            "Extended Kalman filter (EKF)",
+            model_params,
+            lambda v: ExtendedKalmanFilter(*build_models(v), *init(v)),
+            FILTER_DESCRIPTIONS["ekf"],
+        ),
+        FilterType(
+            "ukf",
+            "Unscented Kalman filter (UKF)",
+            model_params + UKF_PARAMS,
+            lambda v: UnscentedKalmanFilter(
+                *build_models(v), *init(v), alpha=v["alpha"], beta=v["beta"], kappa=v["kappa"]
+            ),
+            FILTER_DESCRIPTIONS["ukf"],
+        ),
+        FilterType(
+            "pf",
+            "Particle filter (PF)",
+            model_params + PF_PARAMS,
+            lambda v: ParticleFilter(
+                *build_models(v),
+                *init(v),
+                n_particles=v["n_particles"],
+                resample_threshold=v["resample_threshold"],
+                regularization=v["regularization"],
+                seed=v["seed"],
+            ),
+            FILTER_DESCRIPTIONS["pf"],
+        ),
     ]
     return tuple(types)
 
@@ -336,14 +420,22 @@ CONSTANT_VELOCITY = Scenario(
     filter_types=_family(
         2,
         (
-                Param("q", "Process noise intensity q", 0.05, 1e-4, 10.0, log=True, group="Process model",
-                      help="How much the filter expects the velocity to change."),
-                Param("use_gps", "Use GPS", True, kind="bool", group="Measurements"),
-                Param("gps_R", "GPS noise variance R", 0.25, 1e-4, 10.0, log=True, group="Measurements"),
-                Param("use_speed", "Use speedometer", True, kind="bool", group="Measurements"),
-                Param("speed_R", "Speedometer noise variance R", 0.01, 1e-4, 10.0, log=True, group="Measurements"),
-            )
-            + _filter_init_params(("position", "velocity"), (0.0, 0.0), (1.0, 1.0)),
+            Param(
+                "q",
+                "Process noise intensity q",
+                0.05,
+                1e-4,
+                10.0,
+                log=True,
+                group="Process model",
+                help="How much the filter expects the velocity to change.",
+            ),
+            Param("use_gps", "Use GPS", True, kind="bool", group="Measurements"),
+            Param("gps_R", "GPS noise variance R", 0.25, 1e-4, 10.0, log=True, group="Measurements"),
+            Param("use_speed", "Use speedometer", True, kind="bool", group="Measurements"),
+            Param("speed_R", "Speedometer noise variance R", 0.01, 1e-4, 10.0, log=True, group="Measurements"),
+        )
+        + _filter_init_params(("position", "velocity"), (0.0, 0.0), (1.0, 1.0)),
         build_models=_cv_models,
         build_linear=_cv_models,
         kf_label="Kalman filter (KF)",
@@ -394,11 +486,11 @@ ORNSTEIN_UHLENBECK = Scenario(
     filter_types=_family(
         1,
         (
-                Param("theta", "Model mean reversion θ", 1.0, 0.01, 10.0, log=True, group="Process model"),
-                Param("sigma", "Model volatility σ", 0.5, 0.01, 5.0, log=True, group="Process model"),
-                Param("sensor_R", "Sensor noise variance R", 0.05, 1e-4, 10.0, log=True, group="Measurements"),
-            )
-            + _filter_init_params(("x",), (0.0,), (4.0,)),
+            Param("theta", "Model mean reversion θ", 1.0, 0.01, 10.0, log=True, group="Process model"),
+            Param("sigma", "Model volatility σ", 0.5, 0.01, 5.0, log=True, group="Process model"),
+            Param("sensor_R", "Sensor noise variance R", 0.05, 1e-4, 10.0, log=True, group="Measurements"),
+        )
+        + _filter_init_params(("x",), (0.0,), (4.0,)),
         build_models=_ou_models,
         build_linear=_ou_models,
         kf_label="Kalman filter (KF)",
@@ -451,8 +543,7 @@ def _spring_models(v):
 MASS_SPRING = Scenario(
     key="mass_spring",
     title="Mass–spring–damper",
-    description="A damped oscillator ẍ = −ω² x − 2ζω ẋ + σ w driven by a random force. "
-    "A sensor measures the position.",
+    description="A damped oscillator ẍ = −ω² x − 2ζω ẋ + σ w driven by a random force. A sensor measures the position.",
     state_names=("position", "velocity"),
     system_params=_run_params(duration=20.0, dt=0.02)
     + (
@@ -467,12 +558,12 @@ MASS_SPRING = Scenario(
     filter_types=_family(
         2,
         (
-                Param("omega", "Model frequency ω [rad/s]", 2.0, 0.1, 20.0, log=True, group="Process model"),
-                Param("zeta", "Model damping ratio ζ", 0.1, 0.0, 2.0, 0.01, group="Process model"),
-                Param("sigma", "Model random force σ", 0.5, 0.01, 10.0, log=True, group="Process model"),
-                Param("sensor_R", "Sensor noise variance R", 0.01, 1e-4, 10.0, log=True, group="Measurements"),
-            )
-            + _filter_init_params(("position", "velocity"), (0.0, 0.0), (1.0, 1.0)),
+            Param("omega", "Model frequency ω [rad/s]", 2.0, 0.1, 20.0, log=True, group="Process model"),
+            Param("zeta", "Model damping ratio ζ", 0.1, 0.0, 2.0, 0.01, group="Process model"),
+            Param("sigma", "Model random force σ", 0.5, 0.01, 10.0, log=True, group="Process model"),
+            Param("sensor_R", "Sensor noise variance R", 0.01, 1e-4, 10.0, log=True, group="Measurements"),
+        )
+        + _filter_init_params(("position", "velocity"), (0.0, 0.0), (1.0, 1.0)),
         build_models=_spring_models,
         build_linear=_spring_models,
         kf_label="Kalman filter (KF)",
@@ -536,12 +627,12 @@ PENDULUM = Scenario(
     filter_types=_family(
         2,
         (
-                Param("length", "Model length L [m]", 1.0, 0.1, 10.0, log=True, group="Process model"),
-                Param("damping", "Model damping c [1/s]", 0.1, 0.0, 2.0, 0.01, group="Process model"),
-                Param("sigma", "Model random torque σ", 0.2, 0.001, 5.0, log=True, group="Process model"),
-                Param("encoder_R", "Encoder noise variance R", 0.003, 1e-4, 10.0, log=True, group="Measurements"),
-            )
-            + _filter_init_params(("angle", "angular velocity"), (0.0, 0.0), (1.0, 1.0)),
+            Param("length", "Model length L [m]", 1.0, 0.1, 10.0, log=True, group="Process model"),
+            Param("damping", "Model damping c [1/s]", 0.1, 0.0, 2.0, 0.01, group="Process model"),
+            Param("sigma", "Model random torque σ", 0.2, 0.001, 5.0, log=True, group="Process model"),
+            Param("encoder_R", "Encoder noise variance R", 0.003, 1e-4, 10.0, log=True, group="Measurements"),
+        )
+        + _filter_init_params(("angle", "angular velocity"), (0.0, 0.0), (1.0, 1.0)),
         build_models=_pendulum_nonlinear,
         build_linear=_pendulum_linear,
         kf_label="Kalman filter (KF, small-angle model)",
@@ -630,8 +721,12 @@ LORENZ = Scenario(
     ),
     sensor_state={"x_sensor": 0, "z_sensor": 2},
     matched_defaults={
-        "sigma": "sigma", "rho": "rho", "beta": "beta", "noise": "noise",
-        "x_sensor_R": "x_sensor_R", "z_sensor_R": "z_sensor_R",
+        "sigma": "sigma",
+        "rho": "rho",
+        "beta": "beta",
+        "noise": "noise",
+        "x_sensor_R": "x_sensor_R",
+        "z_sensor_R": "z_sensor_R",
     },
 )
 
@@ -642,6 +737,7 @@ SCENARIOS: dict[str, Scenario] = {
 
 
 def get_scenario(key: str) -> Scenario:
+    """The scenario with the given key, e.g. ``"pendulum"``."""
     try:
         return SCENARIOS[key]
     except KeyError:

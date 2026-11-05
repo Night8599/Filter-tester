@@ -69,7 +69,7 @@ def test_series_helpers():
 def test_runs_are_reproducible():
     source = SimulatedSource(make_cv(), [position_sensor()], np.linspace(0, 2, 21))
     a, b = source.run(rng=7), source.run(rng=7)
-    assert all(np.array_equal(sa.truth, sb.truth) for sa, sb in zip(a, b))
+    assert all(np.array_equal(sa.truth, sb.truth) for sa, sb in zip(a, b, strict=True))
     gen_runs = [source.run(rng=np.random.default_rng(7)) for _ in range(2)]
     assert np.array_equal(truth_series(gen_runs[0])[1], truth_series(gen_runs[1])[1])
 

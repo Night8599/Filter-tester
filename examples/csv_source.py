@@ -28,7 +28,7 @@ print(f"sensors: {source.sensor_names}, truth: {source.has_truth}, {len(steps)} 
 
 t, x = truth_series(steps)
 fig, axes = plot_states(t, x, labels=source.columns("truth"), title="Recorded data", label="truth")
-for ax, sensor in zip(axes, ["gps", "speedometer"]):
+for ax, sensor in zip(axes, ["gps", "speedometer"], strict=True):
     tz, z = measurement_series(steps, sensor)
     ax.plot(tz, z[:, 0], ".", label=sensor)
     ax.legend(loc="upper left")

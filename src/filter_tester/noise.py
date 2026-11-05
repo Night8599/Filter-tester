@@ -8,7 +8,7 @@ Systems accept either a :class:`Noise` instance or a plain callable
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, Union
+from collections.abc import Callable
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -45,6 +45,7 @@ class GaussianNoise(Noise):
         self.dim = dim
 
     def sample(self, rng: np.random.Generator) -> np.ndarray:
+        """One sample of ``N(mean, cov)``."""
         return rng.multivariate_normal(self.mean, self.cov)
 
 
@@ -63,10 +64,11 @@ class UniformNoise(Noise):
         self.dim = low.size
 
     def sample(self, rng: np.random.Generator) -> np.ndarray:
+        """One sample, uniform on ``[low, high]`` per component."""
         return rng.uniform(self.low, self.high)
 
 
-NoiseLike = Union[Noise, Sampler, None]
+NoiseLike = Noise | Sampler | None
 
 
 def as_sampler(noise: NoiseLike) -> Sampler | None:
@@ -95,6 +97,7 @@ class NoiseTerm:
         self._zero: np.ndarray | None = None
 
     def draw(self, rng: np.random.Generator | None, enabled: bool = True) -> np.ndarray | None:
+        """A noise sample, zeros of the same shape if disabled, or ``None`` if there is no noise."""
         if self.sampler is None:
             return None
         if enabled:
