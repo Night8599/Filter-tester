@@ -19,9 +19,9 @@ classifiers = [
 dependencies = ["numpy", "scipy"]
 
 [project.urls]
-Homepage = "https://github.com/Night8599/Filter-tester"
-Demo = "https://night8599.github.io/Filter-tester/"
-Changelog = "https://github.com/Night8599/Filter-tester/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/henrique-kado/Filter-tester"
+Demo = "https://henrique-kado.github.io/Filter-tester/"
+Changelog = "https://github.com/henrique-kado/Filter-tester/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # Plots (filter_tester.plotting) and the example scripts

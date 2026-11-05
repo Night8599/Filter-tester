@@ -1,13 +1,13 @@
 # Filter Tester
 
-[![Tests and web interface](https://github.com/Night8599/Filter-tester/actions/workflows/pages.yml/badge.svg)](https://github.com/Night8599/Filter-tester/actions/workflows/pages.yml)
-[![Live demo](https://img.shields.io/badge/demo-GitHub%20Pages-2f6fdf)](https://night8599.github.io/Filter-tester/)
+[![Tests and web interface](https://github.com/henrique-kado/Filter-tester/actions/workflows/pages.yml/badge.svg)](https://github.com/henrique-kado/Filter-tester/actions/workflows/pages.yml)
+[![Live demo](https://img.shields.io/badge/demo-GitHub%20Pages-2f6fdf)](https://henrique-kado.github.io/Filter-tester/)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 A Python framework for testing and comparing **stochastic filters** on **different kinds of systems**, with simulated data or real recorded data. It answers questions such as *which filter is best for this system?* and *what happens when the filter's model is wrong?*
 
-**[▶ Try the web interface](https://night8599.github.io/Filter-tester/)**: pick a system, add filters, change their constants with sliders and watch the estimates and metrics live. Nothing to install.
+**[▶ Try the web interface](https://henrique-kado.github.io/Filter-tester/)**: pick a system, add filters, change their constants with sliders and watch the estimates and metrics live. Nothing to install.
 
 <p align="center">
   <img src="docs/images/demo.gif" alt="A pendulum swinging at 120°: the linear Kalman filter (blue) drifts away from the truth while the EKF, UKF and particle filter follow it" width="820">
@@ -30,7 +30,7 @@ A Python framework for testing and comparing **stochastic filters** on **differe
 ## Quick start
 
 ```bash
-pip install "filter-tester[plot] @ git+https://github.com/Night8599/Filter-tester"
+pip install "filter-tester[plot] @ git+https://github.com/henrique-kado/Filter-tester"
 # or, from a clone:  pip install -e ".[plot]"
 ```
 
@@ -254,7 +254,7 @@ The verdicts compare the mean NEES / NIS with a 95% chi-square interval:
 
 ## Web interface
 
-**https://night8599.github.io/Filter-tester/**
+**https://henrique-kado.github.io/Filter-tester/**
 
 | Setup | Metrics |
 |---|---|
