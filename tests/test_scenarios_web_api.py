@@ -49,7 +49,10 @@ def test_every_scenario_builds_and_runs_every_filter(key):
 
 def test_kf_only_where_a_linear_model_exists():
     assert {k for k, sc in SCENARIOS.items() if any(ft.key == "kf" for ft in sc.filter_types)} == {
-        "constant_velocity", "ornstein_uhlenbeck", "mass_spring", "pendulum"
+        "constant_velocity",
+        "ornstein_uhlenbeck",
+        "mass_spring",
+        "pendulum",
     }
     pf = {p.key for p in get_scenario("lorenz").filter_type("pf").params}
     assert {"n_particles", "resample_threshold", "regularization", "seed"} <= pf
@@ -102,11 +105,13 @@ def test_matched_filters_are_consistent(key):
 
 def test_pendulum_small_angle_model_degrades_with_angle():
     sc = get_scenario("pendulum")
+
     def mean_nis(angle):
         system = {"duration": 8.0, "angle0": angle, "sigma": 0.01}
         params = sc.filter_defaults("kf", system) | {"x0_0": math.radians(angle), "P0_0": 1e-3, "P0_1": 1e-3}
         mc = MonteCarlo(sc.source(system), {"KF": sc.make_filter("kf", params)}, runs=10)
         return mc_nis_consistency(mc.run(), "KF").mean
+
     small, large = mean_nis(5.0), mean_nis(120.0)
     assert small < 3 and large > 10 * small
 

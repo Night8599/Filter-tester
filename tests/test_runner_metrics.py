@@ -178,9 +178,9 @@ def test_summary_table_and_text():
 def test_plot_estimates_and_errors():
     result = Runner(make_source(2.0), {"A": make_kf(), "B": make_kf(R=1.0)}).run(rng=0)
     fig, axes = plot_estimates(result, labels=["pos", "vel"])
-    assert len(axes) == 2 and [l.get_label() for l in axes[0].lines] == ["truth", "A", "B"]
+    assert len(axes) == 2 and [line.get_label() for line in axes[0].lines] == ["truth", "A", "B"]
     fig, axes = plot_errors(result, filters=["B"])
-    assert [l.get_label() for l in axes[0].lines if not l.get_label().startswith("_")] == ["B"]
+    assert [line.get_label() for line in axes[0].lines if not line.get_label().startswith("_")] == ["B"]
     with pytest.raises(ValueError):
         plot_estimates(result, filters=["C"])
 
@@ -203,7 +203,7 @@ def test_live_filter_plot_shows_final_data():
     live = LiveFilterPlot(labels=["pos", "vel"])
     result = Runner(make_source(2.0), {"A": make_kf(), "B": make_kf(R=1.0)}).run(rng=0, observers=[live])
     live.finish()
-    for i, ax in enumerate(live.axes):
+    for i in range(len(live.axes)):
         assert np.allclose(live._lines["B"][i].get_ydata(), result["B"].mean[:, i])
         assert np.allclose(live._truth_lines[i].get_ydata(), result["B"].truth[:, i])
     with pytest.raises(RuntimeError):

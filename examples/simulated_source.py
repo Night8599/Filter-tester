@@ -29,12 +29,14 @@ speedometer = Sensor("speedometer", lambda x, v, t: x[1:] + v, noise=GaussianNoi
 
 source = SimulatedSource(system, [gps, speedometer], times=np.linspace(0.0, 10.0, 1001))
 steps = source.run(rng=0)
-print(f"{len(steps)} steps, {sum(s.has_measurements for s in steps)} with measurements, "
-      f"{sum(len(s.measurements) == 2 for s in steps)} with both sensors")
+print(
+    f"{len(steps)} steps, {sum(s.has_measurements for s in steps)} with measurements, "
+    f"{sum(len(s.measurements) == 2 for s in steps)} with both sensors"
+)
 
 t, x = truth_series(steps)
 fig, axes = plot_states(t, x, labels=system.state_names, title="Truth and measurements", label="truth")
-for ax, sensor in zip(axes, ["gps", "speedometer"]):
+for ax, sensor in zip(axes, ["gps", "speedometer"], strict=True):
     tz, z = measurement_series(steps, sensor)
     ax.plot(tz, z[:, 0], ".", label=sensor)
     ax.legend(loc="upper left")

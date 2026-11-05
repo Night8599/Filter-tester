@@ -114,8 +114,12 @@ def test_explicit_mapping(tmp_path):
 
 @pytest.mark.parametrize(
     "spec",
-    [{"columns": ["a"]}, {"file": None, "columns": []}, {"file": None, "columns": ["missing"]},
-     {"file": None, "columns": ["a"], "extra": 1}],
+    [
+        {"columns": ["a"]},
+        {"file": None, "columns": []},
+        {"file": None, "columns": ["missing"]},
+        {"file": None, "columns": ["a"], "extra": 1},
+    ],
 )
 def test_explicit_mapping_errors(tmp_path, spec):
     f = write(tmp_path / "s.csv", "t,a\n0,1")

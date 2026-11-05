@@ -55,7 +55,9 @@ def test_numerical_jacobian():
 
 def test_vectorized_and_plain_models_agree():
     plain = ProcessModel(lambda x, dt: np.array([x[0] + dt * x[1], math.sin(x[1])]), Q=np.eye(2))
-    vec = ProcessModel(lambda X, dt: np.stack([X[..., 0] + dt * X[..., 1], np.sin(X[..., 1])], -1), Q=np.eye(2), vectorized=True)
+    vec = ProcessModel(
+        lambda X, dt: np.stack([X[..., 0] + dt * X[..., 1], np.sin(X[..., 1])], -1), Q=np.eye(2), vectorized=True
+    )
     X = np.random.default_rng(0).normal(size=(5, 2))
     assert np.allclose(plain.propagate(X, 0.1), vec.propagate(X, 0.1))
     assert np.allclose(plain.f(X[0], 0.1), vec.f(X[0], 0.1))
@@ -190,8 +192,10 @@ def pendulum_setup(angle0_deg=120.0):
     g_L, c, sigma = 9.81, 0.1, 0.05
     deriv = lambda X: np.stack([X[..., 1], -g_L * np.sin(X[..., 0]) - c * X[..., 1]], -1)  # noqa: E731
     system = SDESystem(
-        f=lambda x, t: deriv(x), G=lambda x, t: [0.0, sigma],
-        x0=GaussianNoise(np.diag([0.01, 0.01]), mean=[math.radians(angle0_deg), 0.0]), max_step=0.002,
+        f=lambda x, t: deriv(x),
+        G=lambda x, t: [0.0, sigma],
+        x0=GaussianNoise(np.diag([0.01, 0.01]), mean=[math.radians(angle0_deg), 0.0]),
+        max_step=0.002,
     )
     enc = Sensor("enc", lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.003]]), period=0.1)
     source = SimulatedSource(system, [enc], times=np.arange(0.0, 6.0 + 0.01, 0.02))
@@ -228,7 +232,9 @@ def test_nonlinear_filters_beat_the_small_angle_kf_on_a_large_swing():
 
 
 def test_batch_jacobian_matches_plain():
-    vec = ProcessModel(lambda X, dt: np.stack([X[..., 0] * X[..., 1], np.sin(X[..., 1]) * dt], -1), Q=np.eye(2), vectorized=True)
+    vec = ProcessModel(
+        lambda X, dt: np.stack([X[..., 0] * X[..., 1], np.sin(X[..., 1]) * dt], -1), Q=np.eye(2), vectorized=True
+    )
     plain = ProcessModel(lambda x, dt: np.array([x[0] * x[1], math.sin(x[1]) * dt]), Q=np.eye(2))
     x = np.array([0.7, -1.2])
     assert np.allclose(vec.jacobian(x, 0.3), plain.jacobian(x, 0.3), atol=1e-8)
@@ -238,12 +244,22 @@ def test_batch_jacobian_matches_plain():
 
 def test_regularization_keeps_particles_diverse():
     process = LinearProcessModel(A=cv_A, Q=np.zeros((2, 2)))  # no process noise: the worst case
+
     def distinct(reg):
-        pf = ParticleFilter(process, LINEAR["measurements"], [0.0, 0.0], np.eye(2), n_particles=300,
-                            resample_threshold=1.0, regularization=reg, seed=0)
+        pf = ParticleFilter(
+            process,
+            LINEAR["measurements"],
+            [0.0, 0.0],
+            np.eye(2),
+            n_particles=300,
+            resample_threshold=1.0,
+            regularization=reg,
+            seed=0,
+        )
         for k in range(20):
             pf.step(0.1 * k, {"gps": [0.0]})
         return len(np.unique(pf.particles.round(12), axis=0))
+
     assert distinct(0.0) < 100 and distinct(1.0) == 300
     with pytest.raises(ValueError):
         ParticleFilter(**LINEAR, regularization=-1.0)

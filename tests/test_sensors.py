@@ -64,10 +64,7 @@ def test_measure_additive_noise_statistics():
 
 def test_measure_non_additive_noise():
     # Range measurement with multiplicative noise.
-    sensor = Sensor(
-        "s",
-        lambda x, v, t: [np.linalg.norm(x) * (1 + v[0])], noise=GaussianNoise([[0.01]]), period=1.0
-    )
+    sensor = Sensor("s", lambda x, v, t: [np.linalg.norm(x) * (1 + v[0])], noise=GaussianNoise([[0.01]]), period=1.0)
     z = sensor.measure([3.0, 4.0], 0.0, np.random.default_rng(1))
     assert z.shape == (1,) and z[0] != 5.0
 
@@ -88,10 +85,7 @@ def test_measurement_names_checked():
 
 # --------------------------------------------------------------- noise switch
 def test_disabled_sensor_noise_gives_nominal_measurement():
-    sensor = Sensor(
-        "s",
-        lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=1.0, noise_enabled=False
-    )
+    sensor = Sensor("s", lambda x, v, t: x[:1] + v, noise=GaussianNoise([[0.25]]), period=1.0, noise_enabled=False)
     assert np.allclose(sensor.measure([1.0, 0.0], 0.0, np.random.default_rng(0)), [1.0])
 
 

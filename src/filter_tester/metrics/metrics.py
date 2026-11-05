@@ -78,10 +78,12 @@ class Consistency:
 
     @property
     def consistent(self) -> bool:
+        """Whether the mean lies inside the chi-square interval."""
         return self.lower <= self.mean <= self.upper
 
     @property
     def verdict(self) -> str:
+        """``consistent``, ``optimistic`` (mean above the interval) or ``pessimistic`` (below)."""
         if self.consistent:
             return "consistent"
         return "optimistic" if self.mean > self.upper else "pessimistic"
@@ -191,7 +193,7 @@ def format_summary(result: RunResult, state_names: list[str] | None = None, conf
     """The summary table as aligned plain text."""
     header, body = summary_table(result, state_names, confidence)
     widths = [max(len(row[i]) for row in [header, *body]) for i in range(len(header))]
-    line = lambda cells: "  ".join(c.ljust(w) for c, w in zip(cells, widths))  # noqa: E731
+    line = lambda cells: "  ".join(c.ljust(w) for c, w in zip(cells, widths, strict=True))  # noqa: E731
     return "\n".join([line(header), "  ".join("-" * w for w in widths), *map(line, body)])
 
 

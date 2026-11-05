@@ -76,11 +76,19 @@ def wait_finished(page, timeout=60000):
 def test_setup_tab(page):
     options = page.locator("#scenario option").all_inner_texts()
     assert options == [
-        "Constant velocity", "Ornstein–Uhlenbeck process", "Mass–spring–damper", "Pendulum (nonlinear)",
+        "Constant velocity",
+        "Ornstein–Uhlenbeck process",
+        "Mass–spring–damper",
+        "Pendulum (nonlinear)",
         "Lorenz system (chaotic)",
     ]
     types = page.locator("#filter-type option").all_inner_texts()
-    assert types == ["Kalman filter (KF)", "Extended Kalman filter (EKF)", "Unscented Kalman filter (UKF)", "Particle filter (PF)"]
+    assert types == [
+        "Kalman filter (KF)",
+        "Extended Kalman filter (EKF)",
+        "Unscented Kalman filter (UKF)",
+        "Particle filter (PF)",
+    ]
     assert page.locator(".filter-card").count() == 1
     assert page.locator("#system-params .param").count() > 5
     page.click("#add-filter")
@@ -161,7 +169,9 @@ def test_nonlinear_filters_on_lorenz(page):
     page.select_option("#scenario", "lorenz")
     page.wait_for_function("document.querySelector('.filter-card input').value === 'EKF (matched)'")
     assert page.locator("#filter-type option").all_inner_texts() == [
-        "Extended Kalman filter (EKF)", "Unscented Kalman filter (UKF)", "Particle filter (PF)"
+        "Extended Kalman filter (EKF)",
+        "Unscented Kalman filter (UKF)",
+        "Particle filter (PF)",
     ]
     set_number(page, "#system-params", "Duration [s]", 3)
     for t in ("ukf", "pf"):

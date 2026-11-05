@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "filter-tester"
-version = "0.1.0"
+version = "0.2.0"
 description = "Test and compare stochastic filters on different systems"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -27,6 +27,7 @@ Changelog = "https://github.com/Night8599/Filter-tester/blob/main/CHANGELOG.md"
 # Plots (filter_tester.plotting) and the example scripts
 plot = ["matplotlib"]
 test = ["pytest", "matplotlib"]
+dev = ["pytest", "matplotlib", "ruff"]
 # End-to-end test of the web interface (also needs a Chrome/Chromium browser)
 ui-test = ["pytest", "matplotlib", "playwright"]
 
@@ -36,3 +37,13 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+# README code blocks are aligned by hand; tests/test_readme.py runs them.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, import order, bugbear, pyupgrade
+select = ["E", "F", "W", "I", "B", "UP"]

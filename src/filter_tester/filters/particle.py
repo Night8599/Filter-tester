@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -75,6 +75,7 @@ class ParticleFilter(BayesFilter):
         super().__init__(x0, P0, name)
 
     def reset(self) -> None:
+        """Draw a new cloud from ``N(x0, P0)`` with uniform weights, restarting the random sequence."""
         super().reset()
         self.rng = np.random.default_rng(self.seed)
         self.particles = self.rng.multivariate_normal(self.x0, self.P0, size=self.n_particles)
@@ -87,10 +88,12 @@ class ParticleFilter(BayesFilter):
 
     @property
     def weights(self) -> np.ndarray:
+        """Normalized particle weights, shape ``(n_particles,)``."""
         return np.exp(self.log_weights)
 
     @property
     def effective_sample_size(self) -> float:
+        """``1 / sum(w^2)``: how many particles effectively carry the weight."""
         return float(1.0 / np.sum(self.weights**2))
 
     def predict(self, dt: float) -> None:

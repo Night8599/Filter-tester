@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import csv
 import os
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Iterator, Mapping, Sequence, Union
+from typing import Union
 
 import numpy as np
 
@@ -93,10 +94,12 @@ class CSVSource:
     # ------------------------------------------------------------------ info
     @property
     def sensor_names(self) -> list[str]:
+        """Names of the sensors found in the files."""
         return list(self._sensors)
 
     @property
     def has_truth(self) -> bool:
+        """Whether the files contain ground truth."""
         return self._truth is not None
 
     def columns(self, name: str) -> list[str]:

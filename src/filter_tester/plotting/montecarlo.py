@@ -11,10 +11,9 @@ Every filter keeps the same color in every figure.
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 from ..experiment.montecarlo import MonteCarloResult
 from ..experiment.runner import RunResult
@@ -65,7 +64,7 @@ def plot_mc_consistency(result: MonteCarloResult, filters=None, confidence: floa
     panels = (["NEES"] if result.has_truth else []) + ["NIS"]
     fig, axes = plt.subplots(len(panels), 1, sharex=True, squeeze=False, figsize=(8, 1.2 + 2.8 * len(panels)))
     axes = list(axes[:, 0])
-    for ax, panel in zip(axes, panels):
+    for ax, panel in zip(axes, panels, strict=True):
         draw = plot_mc_nees if panel == "NEES" else plot_mc_nis
         draw(result, ax=ax, filters=filters, confidence=confidence, log=log)
     axes[-1].set_xlabel("t")
@@ -82,11 +81,11 @@ def plot_rmse_boxplot(result: MonteCarloResult, labels: Sequence[str] | None = N
     if not result.has_truth:
         raise ValueError("plot_rmse_boxplot needs the ground truth")
     n = result.state_dim
-    titles = [f"RMSE {l}" for l in resolve_labels(n, labels)] + ["RMSE total"]
+    titles = [f"RMSE {label}" for label in resolve_labels(n, labels)] + ["RMSE total"]
     named = _named_colors(result, filters)
     fig, axes = plt.subplots(1, n + 1, squeeze=False, figsize=(2.2 + 2.4 * (n + 1), 3.8))
     axes = list(axes[0])
-    for j, (ax, title) in enumerate(zip(axes, titles)):
+    for j, (ax, title) in enumerate(zip(axes, titles, strict=True)):
         data = [result[name].rmse[:, j] if j < n else result[name].rmse_total for _, name in named]
         _boxplot(ax, data, named)
         ax.set_title(title)
@@ -181,7 +180,7 @@ def _finish(ax, title, ylabel, log) -> None:
 
 def _boxplot(ax, data, named) -> None:
     box = ax.boxplot(data, patch_artist=True, widths=0.6)
-    for patch, (color, _) in zip(box["boxes"], named):
+    for patch, (color, _) in zip(box["boxes"], named, strict=True):
         patch.set_facecolor(color)
         patch.set_alpha(0.5)
     for median in box["medians"]:

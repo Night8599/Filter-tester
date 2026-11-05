@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
 
-from .base import InitialState, System, sample_initial_state
 from ..noise import NoiseLike, NoiseTerm
+from .base import InitialState, System, sample_initial_state
 
 TransitionFn = Callable[[np.ndarray, "np.ndarray | None", float, float], ArrayLike]
 

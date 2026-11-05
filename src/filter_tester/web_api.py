@@ -32,7 +32,7 @@ from .metrics.metrics import summary_table
 from .metrics.montecarlo import mc_nees, mc_nis, mc_summary_table
 from .scenarios import SCENARIOS, get_scenario
 
-_sessions: dict[int, "_Session"] = {}
+_sessions: dict[int, _Session] = {}
 _ids = itertools.count(1)
 
 
@@ -48,6 +48,7 @@ def filter_defaults(scenario: str, filter_type: str, system_json: str = "{}") ->
 
 
 def create_session(config_json: str) -> int:
+    """Start a single run or Monte Carlo session from a JSON config; returns its id."""
     config = json.loads(config_json)
     mode = config.get("mode", "single")
     if mode == "single":
@@ -68,6 +69,7 @@ def advance(session_id: int, args_json: str = "{}") -> str:
 
 
 def close_session(session_id: int) -> None:
+    """Forget a session (no error if it does not exist)."""
     _sessions.pop(int(session_id), None)
 
 
